@@ -1,0 +1,55 @@
+
+@startuml
+skinparam style strictuml
+skinparam ActivityBackgroundColor #E3F2FD
+skinparam ActivityBorderColor #1565C0
+skinparam ActivityDiamondBackgroundColor #FFF8E1
+skinparam ActivityDiamondBorderColor #FF8F00
+skinparam SwimlaneBorderColor #90A4AE
+skinparam SwimlaneBorderThickness 2
+skinparam SwimlaneTitleBackgroundColor #CFD8DC
+skinparam SwimlaneTitleFontColor #263238
+skinparam DefaultFontName Arial
+
+|Usuario Final|
+start
+:Ingresa Solicitud de\nBien/Servicio;
+
+|Plataforma Web / IA|
+:Registra Solicitud en BD;
+:Verifica Stock Disponible;
+
+if (¿Stock\nSuficiente?) then (Sí)
+    |Operador de Almacén|
+    :Prepara Despacho;
+    :Confirma Salida;
+    
+    |Plataforma Web / IA|
+    :Actualiza Inventario BD;
+    :Envía Notificación;
+else (No)
+    |Plataforma Web / IA|
+    :Genera Alerta de\nStock Crítico;
+    
+    |Administrador de Logística|
+    :Aprueba Orden\nde Compra;
+    
+    |Plataforma Web / IA|
+    :Emite Orden a\nProveedor;
+    
+    |Operador de Almacén|
+    :Recibe Nueva Mercadería;
+    :Ingresa Items al Sistema;
+    
+    |Plataforma Web / IA|
+    :Actualiza Inventario BD;
+    :Notifica Disponibilidad;
+    
+    |Operador de Almacén|
+    :Prepara Despacho de\nReserva;
+endif
+
+|Usuario Final|
+:Recepción de\nBien/Servicio;
+stop
+@enduml

@@ -1,0 +1,38 @@
+# Entornos Virtuales de Python
+venv/
+env/
+.env
+.venv
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Node / Javascript
+node_modules/
+dist/
+build/
+.npm
+package-lock.json
+yarn.lock
+
+# Archivos del Sistema Operativo
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editores y Entornos de Desarrollo
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Archivos Temporales de la Tesis
+~$*
+*.tmp
+*.bak
+*.log
+
+# Entorno específico de agente/AI que no se debe subir
+.agents/
+.gemini/
+.system_generated/
