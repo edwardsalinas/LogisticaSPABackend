@@ -1,38 +1,28 @@
-# Entornos Virtuales de Python
-venv/
-env/
-.env
-.venv
-__pycache__/
-*.py[cod]
-*$py.class
+# Documentación Base (Ignorada por GIT)
+# Estos archivos se guardan localmente para proveer contexto arquitectónico inicial
+# al agente generador o programador, pero no deben subir al repositorio de código fuente.
+*.pdf
+/pdf_images/
+/archive/
+/pdf_content.txt
 
-# Node / Javascript
+# Dependencias Node
 node_modules/
+npm-debug.log
+.env
+.env.local
+
+# Build
 dist/
 build/
-.npm
-package-lock.json
-yarn.lock
 
-# Archivos del Sistema Operativo
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS Files
 .DS_Store
 Thumbs.db
-desktop.ini
-
-# Editores y Entornos de Desarrollo
-.idea/
-.vscode/
-*.swp
-*.swo
-
-# Archivos Temporales de la Tesis
-~$*
-*.tmp
-*.bak
-*.log
-
-# Entorno específico de agente/AI que no se debe subir
-.agents/
-.gemini/
-.system_generated/
