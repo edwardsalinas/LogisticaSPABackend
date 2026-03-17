@@ -1,4 +1,4 @@
-const supabase = require('../config/supabase');
+import supabase from '../config/supabase.js';
 
 const requireAuth = async (req, res, next) => {
   try {
@@ -40,7 +40,4 @@ const requireRole = (allowedRoles) => {
   };
 };
 
-module.exports = {
-  requireAuth,
-  requireRole
-};
+export { requireAuth, requireRole };

@@ -1,12 +1,6 @@
-const { createClient } = require('@supabase/supabase-js');
+import { createClient } from '@supabase/supabase-js';
+import env from './env.js';
 
-const supabaseUrl = process.env.SUPABASE_URL || 'https://placeholder.supabase.co';
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || 'placeholder-key';
+const supabase = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY);
 
-if (supabaseUrl === 'https://placeholder.supabase.co') {
-  console.warn('[Supabase Config] Warning: SUPABASE_URL not found in environment variables. Using placeholder.');
-}
-
-const supabase = createClient(supabaseUrl, supabaseKey);
-
-module.exports = supabase;
+export default supabase;
