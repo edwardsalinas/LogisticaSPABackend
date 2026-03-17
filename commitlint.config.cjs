@@ -14,7 +14,8 @@ module.exports = {
         'refactor', // Refactorización sin cambio funcional
         'test',     // Agregar/modificar pruebas
         'revert',   // Revertir un commit previo
-        'ci'        // Cambios en los archivos de Integración Continua (GitHub Actions)
+        'ci',       // Cambios en los archivos de Integración Continua (GitHub Actions)
+        'build'     // Cambios en el sistema de build o dependencias externas
       ],
     ],
     // Obligamos a usar SIEMPRE scopes de nuestros modulos definidos
