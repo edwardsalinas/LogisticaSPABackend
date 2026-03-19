@@ -29,3 +29,17 @@ export const logEvent = async (data) => {
 
   return insertedData[0];
 };
+
+export const getLogs = async (packageId) => {
+  const { data, error } = await supabase
+    .from('tracking_logs')
+    .select('*')
+    .eq('package_id', packageId)
+    .order('timestamp', { ascending: false });
+
+  if (error) {
+    throw error;
+  }
+
+  return data;
+};
