@@ -28,3 +28,22 @@ export const logTrackingEvent = async (req, res) => {
     });
   }
 };
+
+export const getTrackingLogs = async (req, res) => {
+  try {
+    const { packageId } = req.params;
+    const logs = await TrackingService.getLogs(packageId);
+
+    return res.status(200).json({
+      success: true,
+      data: logs,
+    });
+  } catch (error) {
+    console.error('[Tracking Controller] Error obteniendo logs:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Error al obtener el historial de tracking',
+    });
+  }
+};
+
