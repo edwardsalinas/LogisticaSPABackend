@@ -3,7 +3,7 @@ import { z } from 'zod';
 export const PACKAGE_STATUS = {
   PENDING: 'pendiente',
   ASSIGNED: 'asignado',
-  IN_TRANSIT: 'en_tránsito',
+  IN_TRANSIT: 'en_transito',
   DELIVERED: 'entregado',
   CANCELLED: 'cancelado',
 };
