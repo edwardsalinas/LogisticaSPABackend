@@ -1,8 +1,7 @@
 import { ChatOpenAI } from "@langchain/openai";
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
-import { createToolCallingAgent, AgentExecutor } from "langchain/agents";
-import { ChatPromptTemplate } from "@langchain/core/prompts";
+import { createReactAgent } from "@langchain/langgraph/prebuilt";
 import * as TrackingService from '../tracking/tracking.service.js';
 import * as LogisticsService from '../logistics/logistics.service.js';
 
@@ -77,27 +76,19 @@ const getLLM = () => {
 
 const llm = getLLM();
 
-const prompt = ChatPromptTemplate.fromMessages([
-  ["system", "Eres un asistente logístico experto. Tienes acceso a herramientas para consultar el historial de paquetes (tracking) y el estado de las rutas de entrega. Ayuda al usuario con sus consultas de forma clara y concisa basándote en la información estricta devuelta por tus herramientas."],
-  ["human", "{input}"],
-  ["placeholder", "{agent_scratchpad}"],
-]);
-
 export const processChatMessage = async (message) => {
-  const agent = createToolCallingAgent({
+  const agentExecutor = createReactAgent({
     llm,
-    tools,
-    prompt,
-  });
-
-  const agentExecutor = new AgentExecutor({
-    agent,
     tools,
   });
 
   const result = await agentExecutor.invoke({
-    input: message,
+    messages: [
+      { role: "system", content: "Eres un asistente logístico experto. Tienes acceso a herramientas para consultar el historial de paquetes (tracking) y el estado de las rutas de entrega. Ayuda al usuario con sus consultas de forma clara y concisa basándote en la información estricta devuelta por tus herramientas." },
+      { role: "user", content: message }
+    ],
   });
 
-  return result.output;
+  const lastMessage = result.messages[result.messages.length - 1];
+  return lastMessage.content;
 };
