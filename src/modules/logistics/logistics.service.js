@@ -100,3 +100,20 @@ eventBus.subscribe('tracking:package_delivered', async ({ packageId }) => {
     console.error(`[Logistics Service] Error en automatización:`, err);
   }
 });
+
+/**
+ * Obtiene los detalles de una ruta y sus paquetes asignados
+ */
+export const getRoute = async (routeId) => {
+  const { data, error } = await supabase
+    .from('transport_routes')
+    .select(`
+      *,
+      packages (*)
+    `)
+    .eq('id', routeId)
+    .single();
+
+  if (error) throw error;
+  return data;
+};
