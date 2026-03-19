@@ -57,7 +57,7 @@ const getLLM = () => {
         modelName: process.env.LLM_MODEL_NAME || "gpt-4o-mini",
         temperature: 0,
       });
-    
+
     // Aquí puedes agregar fácilmente otros proveedores de LangChain en el futuro:
     // case 'anthropic':
     //   import { ChatAnthropic } from "@langchain/anthropic";
