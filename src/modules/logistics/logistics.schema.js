@@ -9,8 +9,8 @@ export const PACKAGE_STATUS = {
 };
 
 export const ROUTE_STATUS = {
-  PLANNED: 'planificada',
-  ACTIVE: 'activa',
+  PLANNED: 'planeada',
+  ACTIVE: 'en_transito',
   COMPLETED: 'completada',
 };
 
@@ -22,11 +22,11 @@ export const packageSchema = z.object({
 });
 
 export const routeSchema = z.object({
-  driver_id: z.string().uuid('driver_id debe ser un UUID válido'),
-  vehicle_id: z.string().uuid('vehicle_id debe ser un UUID válido'),
-  origin_city: z.string().min(2, 'Ciudad de origen es requerida'),
-  destination_city: z.string().min(2, 'Ciudad de destino es requerida'),
-  departure_date: z.string().datetime({ message: 'Fecha de salida inválida (ISO 8601)' }),
+  driver_id: z.string().uuid('driver_id debe ser un UUID válido').optional(),
+  vehicle_id: z.string().uuid('vehicle_id debe ser un UUID válido').optional(),
+  origin: z.string().min(2, 'Ciudad de origen es requerida'),
+  destination: z.string().min(2, 'Ciudad de destino es requerida'),
+  departure_time: z.string().datetime({ message: 'Fecha de salida inválida (ISO 8601)' }),
 });
 
 export const assignmentSchema = z.object({
