@@ -5,6 +5,7 @@
 /pdf_images/
 /archive/
 /pdf_content.txt
+/docs/wiki/knowledge-base.md
 
 # Dependencias Node
 node_modules/
