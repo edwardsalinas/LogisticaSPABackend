@@ -6,15 +6,47 @@ const router = Router();
 router.use(requireAuth);
 
 /**
- * Gestión de Vehículos
- * Acceso: Admin, Operador
+ * @swagger
+ * /api/fleet/vehicles:
+ *   get:
+ *     summary: Listar todos los vehículos
+ *     tags: [Fleet]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Lista de vehículos
+ *   post:
+ *     summary: Crear un nuevo vehículo
+ *     tags: [Fleet]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               plate: { type: string }
+ *               model: { type: string }
+ *               type: { type: string }
+ *               capacity_kg: { type: number }
+ *     responses:
+ *       201:
+ *         description: Vehículo creado
  */
 router.get('/vehicles', FleetController.handleGetVehicles);
 router.post('/vehicles', requireRole(['admin']), FleetController.handleCreateVehicle);
 
 /**
- * Gestión de Choferes
- * Acceso: Admin (para registro masivo) o Chofer (para su propio perfil)
+ * @swagger
+ * /api/fleet/drivers:
+ *   post:
+ *     summary: Registrar un nuevo chofer
+ *     tags: [Fleet]
+ *     security:
+ *       - bearerAuth: []
  */
 router.post('/drivers', requireRole(['admin', 'driver']), FleetController.handleRegisterDriver);
 
