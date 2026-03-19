@@ -17,10 +17,23 @@ export const createVehicle = async (data) => {
 
 export const getVehicles = async (filters = {}) => {
   let query = supabase.from('vehicles').select('*');
-  
+
   if (filters.status) query = query.eq('status', filters.status);
-  
+
   const { data, error } = await query;
+  if (error) throw error;
+  return data;
+};
+
+/**
+ * Obtiene todos los choferes
+ */
+export const getDrivers = async () => {
+  const { data, error } = await supabase
+    .from('drivers')
+    .select('*')
+    .order('created_at', { ascending: false });
+
   if (error) throw error;
   return data;
 };

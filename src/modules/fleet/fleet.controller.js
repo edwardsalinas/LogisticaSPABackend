@@ -2,6 +2,16 @@ import * as FleetService from './fleet.service.js';
 import { vehicleSchema, driverSchema } from './fleet.schema.js';
 import { z } from 'zod';
 
+export const handleGetDrivers = async (req, res) => {
+  try {
+    const drivers = await FleetService.getDrivers();
+    return res.status(200).json({ success: true, data: drivers });
+  } catch (error) {
+    console.error('[Fleet Controller] Error obteniendo choferes:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 export const handleCreateVehicle = async (req, res) => {
   try {
     const validatedData = vehicleSchema.parse(req.body);
