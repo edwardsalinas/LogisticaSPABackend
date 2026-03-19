@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import * as FleetController from './fleet.controller.js';
-import { requireAuth, requireRole } from '../../shared/middlewares/auth.js';
+import { requireAuth, requireRole } from '../iam/iam.middleware.js';
 
 const router = Router();
 router.use(requireAuth);
