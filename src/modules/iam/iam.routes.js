@@ -1,4 +1,6 @@
 import { Router } from 'express';
+import { createClient } from '@supabase/supabase-js';
+import env from '../../shared/config/env.js';
 import supabase from '../../shared/config/supabase.js';
 import { requireAuth } from './iam.middleware.js';
 
@@ -30,7 +32,13 @@ const router = Router();
  */
 router.post('/login', async (req, res) => {
   const { email, password } = req.body;
-  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+  
+  // Creamos un cliente local para el login para evitar contaminar el singleton del Service Role
+  const authClient = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, {
+    auth: { persistSession: false }
+  });
+
+  const { data, error } = await authClient.auth.signInWithPassword({ email, password });
   
   if (error) return res.status(401).json({ success: false, message: error.message });
   return res.status(200).json({ success: true, data });

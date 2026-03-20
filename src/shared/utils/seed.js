@@ -27,7 +27,50 @@ async function seed() {
     const adminId = admin.id;
     console.log('✅ Admin listo:', adminId);
 
-    // 2. Crear Vehículos
+    // 2. Limpiar datos previos (Orden inverso de dependencias)
+    console.log('Limpiando datos previos...');
+    await supabase.from('checkpoint_visits').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+    await supabase.from('route_checkpoints').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+    await supabase.from('tracking_logs').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+    await supabase.from('packages').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+    await supabase.from('transport_routes').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+    await supabase.from('vehicles').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+    console.log('✅ Base de datos limpia.');
+
+    // 3. Crear Rutas de Transporte BASE
+    console.log('Creando rutas de transporte de prueba...');
+    const routesData = [
+      { origin: 'La Paz', destination: 'Cochabamba', status: 'planeada' },
+      { origin: 'Santa Cruz', destination: 'Tarija', status: 'planeada' }
+    ];
+
+    const { data: routes, error: rError } = await supabase
+      .from('transport_routes')
+      .insert(routesData)
+      .select();
+    if (rError) throw rError;
+    console.log(`✅ ${routes.length} Rutas preparadas.`);
+
+    const lpCochRoute = routes.find(r => r.origin === 'La Paz');
+
+    // 4. Crear Checkpoints para la ruta La Paz -> Cochabamba
+    if (lpCochRoute) {
+      console.log('Creando checkpoints para la ruta La Paz -> Cochabamba...');
+      const checkpointsData = [
+        { route_id: lpCochRoute.id, name: 'Checkpoint El Alto', lat: -16.5100, lng: -68.1500, sequence_order: 1, radius_meters: 1000 },
+        { route_id: lpCochRoute.id, name: 'Puesto Viacha', lat: -16.6500, lng: -68.3100, sequence_order: 2, radius_meters: 500 },
+        { route_id: lpCochRoute.id, name: 'Terminal Oruro (Punto Intermedio)', lat: -17.9833, lng: -67.1500, sequence_order: 3, radius_meters: 2000 }
+      ];
+
+      const { error: cpError } = await supabase
+        .from('route_checkpoints')
+        .insert(checkpointsData);
+      
+      if (cpError) throw cpError;
+      console.log('✅ Checkpoints de prueba creados.');
+    }
+
+    // 5. Crear Vehículos
     console.log('Creando vehículos de prueba...');
     const vehiclesData = [
       { plate: 'ABC-123', model: 'Volvo FH16', type: 'trailer', capacity_kg: 20000, status: 'disponible' },
@@ -37,12 +80,12 @@ async function seed() {
 
     const { data: vehicles, error: vError } = await supabase
       .from('vehicles')
-      .upsert(vehiclesData, { onConflict: 'plate' })
+      .insert(vehiclesData)
       .select();
     if (vError) throw vError;
     console.log(`✅ ${vehicles.length} Vehículos preparados.`);
 
-    // 3. Crear Paquetes Base
+    // 6. Crear Paquetes Base
     console.log('Creando paquetes de prueba...');
     const packagesData = [
       { 
@@ -67,7 +110,7 @@ async function seed() {
 
     const { data: pkgs, error: pError } = await supabase
       .from('packages')
-      .upsert(packagesData, { onConflict: 'tracking_code' })
+      .insert(packagesData)
       .select();
     if (pError) throw pError;
     console.log(`✅ ${pkgs.length} Paquetes preparados.`);

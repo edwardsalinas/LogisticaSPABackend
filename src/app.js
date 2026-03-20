@@ -6,6 +6,7 @@ import trackingRoutes from './modules/tracking/tracking.routes.js';
 import iamRoutes from './modules/iam/iam.routes.js';
 import { setupSwagger } from './shared/config/swagger.js';
 import aiAgentRoutes from './modules/ai-agent/ai-agent.routes.js';
+import checkpointsRoutes from './modules/logistics/checkpoints.routes.js';
 
 const app = express();
 
@@ -16,6 +17,7 @@ app.use(express.json());
 setupSwagger(app);
 
 app.use('/api/logistics', logisticsRoutes);
+app.use('/api/logistics', checkpointsRoutes);
 app.use('/api/fleet', fleetRoutes);
 app.use('/api/tracking', trackingRoutes);
 app.use('/api/iam', iamRoutes);
