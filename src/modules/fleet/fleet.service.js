@@ -42,6 +42,14 @@ export const registerDriver = async (userId, data) => {
   return inserted;
 };
 
+export const getDrivers = async (filters = {}) => {
+  let query = supabase.from('drivers').select('*');
+  if (filters.status) query = query.eq('status', filters.status);
+  const { data, error } = await query;
+  if (error) throw error;
+  return data;
+};
+
 /**
  * Interfaz Pública del Módulo (Consultada por otros módulos)
  */

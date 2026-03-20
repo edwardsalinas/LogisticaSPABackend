@@ -23,6 +23,16 @@ export const handleGetVehicles = async (req, res) => {
   }
 };
 
+export const handleGetDrivers = async (req, res) => {
+  try {
+    const filters = req.query;
+    const result = await FleetService.getDrivers(filters);
+    return res.status(200).json({ success: true, data: result });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 export const handleRegisterDriver = async (req, res) => {
   try {
     const validatedData = driverSchema.parse(req.body);

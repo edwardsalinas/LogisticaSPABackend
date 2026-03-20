@@ -37,3 +37,23 @@ export const handleAssignPackage = async (req, res) => {
     return res.status(500).json({ success: false, message: error.message });
   }
 };
+
+export const handleGetPackages = async (req, res) => {
+  try {
+    const filters = req.query;
+    const result = await LogisticsService.getPackages(filters);
+    return res.status(200).json({ success: true, data: result });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const handleGetRoutes = async (req, res) => {
+  try {
+    const filters = req.query;
+    const result = await LogisticsService.getRoutes(filters);
+    return res.status(200).json({ success: true, data: result });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};

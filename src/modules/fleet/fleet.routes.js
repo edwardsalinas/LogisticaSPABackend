@@ -48,6 +48,7 @@ router.post('/vehicles', requireRole(['admin']), FleetController.handleCreateVeh
  *     security:
  *       - bearerAuth: []
  */
+router.get('/drivers', FleetController.handleGetDrivers);
 router.post('/drivers', requireRole(['admin', 'driver']), FleetController.handleRegisterDriver);
 
 export default router;
