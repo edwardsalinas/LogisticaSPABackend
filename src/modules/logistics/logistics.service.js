@@ -3,11 +3,37 @@ import eventBus from '../../shared/utils/eventBus.js';
 import { PACKAGE_STATUS, ROUTE_STATUS } from './logistics.schema.js';
 
 /**
+ * Obtiene todos los paquetes
+ */
+export const getPackages = async () => {
+  const { data, error } = await supabase
+    .from('packages')
+    .select('*')
+    .order('created_at', { ascending: false });
+
+  if (error) throw error;
+  return data;
+};
+
+/**
+ * Obtiene todas las rutas de transporte
+ */
+export const getRoutes = async () => {
+  const { data, error } = await supabase
+    .from('transport_routes')
+    .select('*')
+    .order('created_at', { ascending: false });
+
+  if (error) throw error;
+  return data;
+};
+
+/**
  * Registra un nuevo paquete
  */
 export const createPackage = async (data, userId) => {
   const { origen, destino, peso, description } = data;
-  
+
   const { data: inserted, error } = await supabase
     .from('packages')
     .insert([
@@ -53,9 +79,9 @@ export const createRoute = async (data) => {
 export const assignPackageToRoute = async (packageId, routeId) => {
   const { data: updated, error } = await supabase
     .from('packages')
-    .update({ 
-      route_id: routeId, 
-      status: PACKAGE_STATUS.ASSIGNED 
+    .update({
+      route_id: routeId,
+      status: PACKAGE_STATUS.ASSIGNED
     })
     .eq('id', packageId)
     .select()
@@ -70,7 +96,7 @@ export const assignPackageToRoute = async (packageId, routeId) => {
  */
 eventBus.subscribe('tracking:package_delivered', async ({ packageId }) => {
   console.log(`[Logistics Service] Paquete entregado detectado: ${packageId}`);
-  
+
   try {
     const { data: pkg, error: pkgError } = await supabase
       .from('packages')

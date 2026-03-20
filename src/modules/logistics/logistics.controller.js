@@ -2,6 +2,26 @@ import * as LogisticsService from './logistics.service.js';
 import { packageSchema, routeSchema, assignmentSchema } from './logistics.schema.js';
 import { z } from 'zod';
 
+export const handleGetPackages = async (req, res) => {
+  try {
+    const packages = await LogisticsService.getPackages();
+    return res.status(200).json({ success: true, data: packages });
+  } catch (error) {
+    console.error('[Logistics Controller] Error obteniendo paquetes:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const handleGetRoutes = async (req, res) => {
+  try {
+    const routes = await LogisticsService.getRoutes();
+    return res.status(200).json({ success: true, data: routes });
+  } catch (error) {
+    console.error('[Logistics Controller] Error obteniendo rutas:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 export const handleCreatePackage = async (req, res) => {
   try {
     const validatedData = packageSchema.parse(req.body);

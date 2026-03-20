@@ -42,12 +42,21 @@ router.post('/vehicles', requireRole(['admin']), FleetController.handleCreateVeh
 /**
  * @swagger
  * /api/fleet/drivers:
+ *   get:
+ *     summary: Listar todos los choferes
+ *     tags: [Fleet]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Lista de choferes
  *   post:
  *     summary: Registrar un nuevo chofer
  *     tags: [Fleet]
  *     security:
  *       - bearerAuth: []
  */
+router.get('/drivers', FleetController.handleGetDrivers);
 router.post('/drivers', requireRole(['admin', 'driver']), FleetController.handleRegisterDriver);
 
 export default router;
