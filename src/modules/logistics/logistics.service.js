@@ -117,3 +117,19 @@ export const getRoute = async (routeId) => {
   if (error) throw error;
   return data;
 };
+
+export const getPackages = async (filters = {}) => {
+  let query = supabase.from('packages').select('*');
+  if (filters.status) query = query.eq('status', filters.status);
+  const { data, error } = await query;
+  if (error) throw error;
+  return data;
+};
+
+export const getRoutes = async (filters = {}) => {
+  let query = supabase.from('transport_routes').select('*');
+  if (filters.status) query = query.eq('status', filters.status);
+  const { data, error } = await query;
+  if (error) throw error;
+  return data;
+};

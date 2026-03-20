@@ -28,11 +28,20 @@ router.use(requireAuth);
  *       201:
  *         description: Paquete creado
  */
+router.get('/packages', LogisticsController.handleGetPackages);
 router.post('/packages', requireRole(['admin', 'client']), LogisticsController.handleCreatePackage);
 
 /**
  * @swagger
  * /api/logistics/routes:
+ *   get:
+ *     summary: Obtener todas las rutas de transporte
+ *     tags: [Logistics]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Lista de rutas obtenida
  *   post:
  *     summary: Crear una nueva ruta de transporte
  *     tags: [Logistics]
@@ -55,6 +64,7 @@ router.post('/packages', requireRole(['admin', 'client']), LogisticsController.h
  *       201:
  *         description: Ruta creada
  */
+router.get('/routes', LogisticsController.handleGetRoutes);
 router.post('/routes', requireRole(['admin', 'logistics_operator']), LogisticsController.handleCreateRoute);
 
 /**
