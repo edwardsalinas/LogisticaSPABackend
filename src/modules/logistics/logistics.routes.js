@@ -67,6 +67,8 @@ router.post('/packages', requireRole(['admin', 'logistics_operator']), Logistics
 router.get('/routes', LogisticsController.handleGetRoutes);
 router.get('/routes/:id', LogisticsController.handleGetRoute);
 router.post('/routes', requireRole(['admin', 'logistics_operator']), LogisticsController.handleCreateRoute);
+router.put('/routes/:id', requireRole(['admin', 'logistics_operator']), LogisticsController.handleUpdateRoute);
+router.delete('/routes/:id', requireRole(['admin', 'logistics_operator']), LogisticsController.handleDeleteRoute);
 
 /**
  * @swagger
@@ -90,5 +92,19 @@ router.post('/routes', requireRole(['admin', 'logistics_operator']), LogisticsCo
  *               package_id: { type: string, format: uuid }
  */
 router.post('/routes/:id/assign', requireRole(['admin', 'logistics_operator']), LogisticsController.handleAssignPackage);
+
+/**
+ * @swagger
+ * /api/logistics/predefined-routes:
+ *   get:
+ *     summary: Obtener rutas predefinidas
+ *     tags: [Logistics]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Lista de rutas predefinidas
+ */
+router.get('/predefined-routes', LogisticsController.handleGetPredefinedRoutes);
 
 export default router;

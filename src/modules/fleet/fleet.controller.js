@@ -33,6 +33,7 @@ export const handleGetDrivers = async (req, res) => {
   }
 };
 
+
 export const handleRegisterDriver = async (req, res) => {
   try {
     const validatedData = driverSchema.parse(req.body);

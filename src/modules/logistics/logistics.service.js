@@ -43,14 +43,28 @@ export const createPackage = async (data, userId) => {
 };
 
 /**
+ * Lista todos los paquetes (con filtros opcionales)
+ */
+export const getPackages = async (filters = {}) => {
+  let query = supabase.from('packages').select('*').order('created_at', { ascending: false });
+  if (filters.status) query = query.eq('status', filters.status);
+  if (filters.sender_id) query = query.eq('sender_id', filters.sender_id);
+  const { data, error } = await query;
+  if (error) throw error;
+  return data;
+};
+
+/**
  * Crea una nueva ruta de transporte
  */
 export const createRoute = async (data) => {
-  const { data: inserted, error } = await supabase
+  const { checkpoints, ...routeData } = data;
+
+  const { data: route, error } = await supabase
     .from('transport_routes')
     .insert([
       {
-        ...data,
+        ...routeData,
         status: ROUTE_STATUS.PLANNED
       }
     ])
@@ -58,7 +72,36 @@ export const createRoute = async (data) => {
     .single();
 
   if (error) throw error;
-  return inserted;
+
+  // Insertar checkpoints si vienen en el payload
+  if (checkpoints && checkpoints.length > 0) {
+    const checkpointsToInsert = checkpoints.map(cp => ({
+      ...cp,
+      route_id: route.id
+    }));
+
+    const { error: cpError } = await supabase
+      .from('route_checkpoints')
+      .insert(checkpointsToInsert);
+
+    if (cpError) {
+      console.error('[Logistics Service] Error insertando checkpoints:', cpError);
+    }
+  }
+
+  return route;
+};
+
+/**
+ * Lista todas las rutas de transporte (con filtros opcionales)
+ */
+export const getRoutes = async (filters = {}) => {
+  let query = supabase.from('transport_routes').select('*').order('created_at', { ascending: false });
+  if (filters.status) query = query.eq('status', filters.status);
+  if (filters.driver_id) query = query.eq('driver_id', filters.driver_id);
+  const { data, error } = await query;
+  if (error) throw error;
+  return data;
 };
 
 /**
@@ -146,18 +189,112 @@ export const getRoute = async (routeId) => {
   };
 };
 
-export const getPackages = async (filters = {}) => {
-  let query = supabase.from('packages').select('*');
-  if (filters.status) query = query.eq('status', filters.status);
-  const { data, error } = await query;
+/**
+ * Actualiza una ruta de transporte y sus checkpoints
+ */
+export const updateRoute = async (id, data) => {
+  const { checkpoints, ...routeData } = data;
+
+  // 1. Actualizar datos básicos de la ruta
+  const { data: updated, error } = await supabase
+    .from('transport_routes')
+    .update({
+      ...routeData,
+      updated_at: new Date().toISOString()
+    })
+    .eq('id', id)
+    .select()
+    .single();
+
   if (error) throw error;
-  return data;
+
+  // 2. Gestionar checkpoints (Eliminar existentes y re-insertar)
+  // Nota: Esto es más simple que hacer un diff, dado que son pocos puntos.
+  if (checkpoints) {
+    // Primero eliminamos los viejos
+    await supabase
+      .from('route_checkpoints')
+      .delete()
+      .eq('route_id', id);
+
+    // Luego insertamos los nuevos
+    if (checkpoints.length > 0) {
+      const checkpointsToInsert = checkpoints.map(cp => ({
+        ...cp,
+        route_id: id
+      }));
+
+      const { error: cpError } = await supabase
+        .from('route_checkpoints')
+        .insert(checkpointsToInsert);
+
+      if (cpError) {
+        console.error('[Logistics Service] Error actualizando checkpoints:', cpError);
+      }
+    }
+  }
+
+  return updated;
 };
 
-export const getRoutes = async (filters = {}) => {
-  let query = supabase.from('transport_routes').select('*');
-  if (filters.status) query = query.eq('status', filters.status);
-  const { data, error } = await query;
+/**
+ * Elimina una ruta de transporte
+ */
+export const deleteRoute = async (id) => {
+  // 1. Obtener IDs de viajes asociados a esta ruta
+  const { data: trips } = await supabase
+    .from('driver_trips')
+    .select('id')
+    .eq('route_id', id);
+  
+  const tripIds = trips?.map(t => t.id) || [];
+
+  // 2. Desasignar paquetes (volver a PENDING)
+  await supabase
+    .from('packages')
+    .update({ route_id: null, status: PACKAGE_STATUS.PENDING })
+    .eq('route_id', id);
+
+  // 3. Limpiar tracking_logs para romper la cadena de FK
+  if (tripIds.length > 0) {
+    await supabase
+      .from('tracking_logs')
+      .update({ trip_id: null })
+      .in('trip_id', tripIds);
+  }
+
+  // 4. Eliminar sesiones de viaje (driver_trips)
+  await supabase
+    .from('driver_trips')
+    .delete()
+    .eq('route_id', id);
+
+  // 5. Eliminar checkpoints
+  await supabase
+    .from('route_checkpoints')
+    .delete()
+    .eq('route_id', id);
+
+  // 6. Eliminar la ruta
+  const { error } = await supabase
+    .from('transport_routes')
+    .delete()
+    .eq('id', id);
+
+  if (error) throw error;
+  return true;
+};
+
+/**
+ * Lista las rutas predefinidas activas
+ */
+export const getPredefinedRoutes = async () => {
+  const { data, error } = await supabase
+    .from('predefined_routes')
+    .select('*')
+    .eq('is_active', true)
+    .order('name', { ascending: true });
+
   if (error) throw error;
   return data;
 };

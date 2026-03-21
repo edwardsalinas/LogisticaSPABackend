@@ -14,6 +14,38 @@ export const handleCreatePackage = async (req, res) => {
   }
 };
 
+export const handleGetPackages = async (req, res) => {
+  try {
+    const filters = { ...req.query };
+    
+    // Si es cliente, forzar filtro por su propio ID
+    if (req.user.role === 'client') {
+      filters.sender_id = req.user.id;
+    }
+
+    const result = await LogisticsService.getPackages(filters);
+    return res.status(200).json({ success: true, data: result });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const handleGetRoutes = async (req, res) => {
+  try {
+    const filters = { ...req.query };
+    
+    // Si es conductor, solo ve sus propias rutas asignadas
+    if (req.user.role === 'driver') {
+      filters.driver_id = req.user.id;
+    }
+
+    const result = await LogisticsService.getRoutes(filters);
+    return res.status(200).json({ success: true, data: result });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 export const handleCreateRoute = async (req, res) => {
   try {
     const validatedData = routeSchema.parse(req.body);
@@ -39,21 +71,32 @@ export const handleAssignPackage = async (req, res) => {
   }
 };
 
-export const handleGetPackages = async (req, res) => {
+export const handleGetPredefinedRoutes = async (req, res) => {
   try {
-    const filters = req.query;
-    const result = await LogisticsService.getPackages(filters);
+    const result = await LogisticsService.getPredefinedRoutes();
     return res.status(200).json({ success: true, data: result });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });
   }
 };
 
-export const handleGetRoutes = async (req, res) => {
+export const handleUpdateRoute = async (req, res) => {
   try {
-    const filters = req.query;
-    const result = await LogisticsService.getRoutes(filters);
+    const { id } = req.params;
+    const validatedData = routeSchema.partial().parse(req.body);
+    const result = await LogisticsService.updateRoute(id, validatedData);
     return res.status(200).json({ success: true, data: result });
+  } catch (error) {
+    if (error instanceof z.ZodError) return res.status(400).json({ success: false, errors: error.flatten().fieldErrors });
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const handleDeleteRoute = async (req, res) => {
+  try {
+    const { id } = req.params;
+    await LogisticsService.deleteRoute(id);
+    return res.status(200).json({ success: true, message: 'Ruta eliminada correctamente' });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });
   }

@@ -26,6 +26,17 @@ export const getVehicles = async (filters = {}) => {
 };
 
 /**
+ * Lista todos los conductores (con filtros opcionales)
+ */
+export const getDrivers = async (filters = {}) => {
+  let query = supabase.from('drivers').select('*').order('created_at', { ascending: false });
+  if (filters.status) query = query.eq('status', filters.status);
+  const { data, error } = await query;
+  if (error) throw error;
+  return data;
+};
+
+/**
  * Gestión de Choferes (Perfiles)
  */
 export const registerDriver = async (userId, data) => {
@@ -40,14 +51,6 @@ export const registerDriver = async (userId, data) => {
 
   if (error) throw error;
   return inserted;
-};
-
-export const getDrivers = async (filters = {}) => {
-  let query = supabase.from('drivers').select('*');
-  if (filters.status) query = query.eq('status', filters.status);
-  const { data, error } = await query;
-  if (error) throw error;
-  return data;
 };
 
 /**

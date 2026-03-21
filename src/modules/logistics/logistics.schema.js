@@ -13,7 +13,6 @@ export const ROUTE_STATUS = {
   ACTIVE: 'en_transito',
   COMPLETED: 'completada',
 };
-
 export const packageSchema = z.object({
   origen: z.string().min(3, 'Origen es requerido (mín. 3 caracteres)'),
   destino: z.string().min(3, 'Destino es requerido (mín. 3 caracteres)'),
@@ -28,7 +27,18 @@ export const routeSchema = z.object({
   vehicle_id: z.string().uuid('vehicle_id debe ser un UUID válido').optional(),
   origin: z.string().min(2, 'Ciudad de origen es requerida'),
   destination: z.string().min(2, 'Ciudad de destino es requerida'),
+  origin_lat: z.number().optional(),
+  origin_lng: z.number().optional(),
+  dest_lat: z.number().optional(),
+  dest_lng: z.number().optional(),
+  route_code: z.string().optional(),
   departure_time: z.string().datetime({ message: 'Fecha de salida inválida (ISO 8601)' }),
+  checkpoints: z.array(z.object({
+    name: z.string().min(2),
+    lat: z.number(),
+    lng: z.number(),
+    sequence_order: z.number().int()
+  })).optional(),
 });
 
 export const assignmentSchema = z.object({
