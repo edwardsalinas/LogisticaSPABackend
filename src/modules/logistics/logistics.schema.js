@@ -19,6 +19,8 @@ export const packageSchema = z.object({
   destino: z.string().min(3, 'Destino es requerido (mín. 3 caracteres)'),
   peso: z.number().positive('El peso debe ser un número positivo'),
   description: z.string().optional(),
+  route_id: z.string().uuid('route_id debe ser un UUID válido').nullish(),
+  sender_id: z.string().uuid('sender_id debe ser un UUID válido').optional(),
 });
 
 export const routeSchema = z.object({

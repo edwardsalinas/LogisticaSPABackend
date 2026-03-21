@@ -63,3 +63,23 @@ export const getActiveDriver = async (driverId) => {
   if (error) throw error;
   return data;
 };
+
+/**
+ * Obtiene todos los usuarios registrados con el rol 'client'
+ */
+export const getClients = async () => {
+  const { data, error } = await supabase.auth.admin.listUsers();
+  if (error) throw error;
+
+  return data.users
+    .filter(u => u.user_metadata?.role === 'client')
+    .map(u => ({
+      id: u.id,
+      email: u.email,
+      name: u.user_metadata?.full_name || 
+            (u.user_metadata?.first_name 
+              ? `${u.user_metadata.first_name} ${u.user_metadata.last_name || ''}`.trim()
+              : u.email),
+      phone: u.user_metadata?.phone || null
+    }));
+};

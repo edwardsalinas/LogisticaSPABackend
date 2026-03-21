@@ -6,7 +6,20 @@ import { PACKAGE_STATUS, ROUTE_STATUS } from './logistics.schema.js';
  * Registra un nuevo paquete
  */
 export const createPackage = async (data, userId) => {
-  const { origen, destino, peso, description } = data;
+  const { origen, destino, peso, description, route_id } = data;
+  
+  let initialStatus = PACKAGE_STATUS.PENDING;
+  
+  if (route_id) {
+    const { data: activeTrip } = await supabase
+      .from('driver_trips')
+      .select('id')
+      .eq('route_id', route_id)
+      .eq('status', 'active')
+      .maybeSingle();
+      
+    initialStatus = activeTrip ? PACKAGE_STATUS.IN_TRANSIT : PACKAGE_STATUS.ASSIGNED;
+  }
   
   const { data: inserted, error } = await supabase
     .from('packages')
@@ -17,7 +30,8 @@ export const createPackage = async (data, userId) => {
         destino,
         peso,
         description,
-        status: PACKAGE_STATUS.PENDING,
+        route_id: route_id || null,
+        status: initialStatus,
         tracking_code: `TRK-${Date.now()}-${Math.floor(Math.random() * 1000)}`
       }
     ])
@@ -51,11 +65,20 @@ export const createRoute = async (data) => {
  * Asigna un paquete a una ruta
  */
 export const assignPackageToRoute = async (packageId, routeId) => {
+  const { data: activeTrip } = await supabase
+    .from('driver_trips')
+    .select('id')
+    .eq('route_id', routeId)
+    .eq('status', 'active')
+    .maybeSingle();
+
+  const newStatus = activeTrip ? PACKAGE_STATUS.IN_TRANSIT : PACKAGE_STATUS.ASSIGNED;
+
   const { data: updated, error } = await supabase
     .from('packages')
     .update({ 
       route_id: routeId, 
-      status: PACKAGE_STATUS.ASSIGNED 
+      status: newStatus 
     })
     .eq('id', packageId)
     .select()
@@ -109,13 +132,18 @@ export const getRoute = async (routeId) => {
     .from('transport_routes')
     .select(`
       *,
-      packages (*)
+      packages (*),
+      route_checkpoints (*)
     `)
     .eq('id', routeId)
     .single();
 
   if (error) throw error;
-  return data;
+  
+  return {
+    ...data,
+    checkpoints: data.route_checkpoints?.sort((a, b) => a.sequence_order - b.sequence_order) || []
+  };
 };
 
 export const getPackages = async (filters = {}) => {

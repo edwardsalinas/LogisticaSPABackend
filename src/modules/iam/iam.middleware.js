@@ -20,6 +20,7 @@ export const requireAuth = async (req, res, next) => {
     }
 
     req.user = user;
+    req.user.role = user.user_metadata?.role || 'client';
     next();
   } catch (error) {
     console.error('[IAM Middleware] Authentication error:', error.message || error);

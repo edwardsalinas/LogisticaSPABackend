@@ -45,3 +45,12 @@ export const handleRegisterDriver = async (req, res) => {
     return res.status(500).json({ success: false, message: error.message });
   }
 };
+
+export const handleGetClients = async (req, res) => {
+  try {
+    const clients = await FleetService.getClients();
+    return res.status(200).json({ success: true, data: clients });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};

@@ -51,4 +51,6 @@ router.post('/vehicles', requireRole(['admin']), FleetController.handleCreateVeh
 router.get('/drivers', FleetController.handleGetDrivers);
 router.post('/drivers', requireRole(['admin', 'driver']), FleetController.handleRegisterDriver);
 
+router.get('/clients', requireRole(['admin', 'logistics_operator']), FleetController.handleGetClients);
+
 export default router;

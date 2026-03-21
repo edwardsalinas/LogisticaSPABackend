@@ -29,7 +29,7 @@ router.use(requireAuth);
  *         description: Paquete creado
  */
 router.get('/packages', LogisticsController.handleGetPackages);
-router.post('/packages', requireRole(['admin', 'client']), LogisticsController.handleCreatePackage);
+router.post('/packages', requireRole(['admin', 'logistics_operator']), LogisticsController.handleCreatePackage);
 
 /**
  * @swagger
@@ -65,6 +65,7 @@ router.post('/packages', requireRole(['admin', 'client']), LogisticsController.h
  *         description: Ruta creada
  */
 router.get('/routes', LogisticsController.handleGetRoutes);
+router.get('/routes/:id', LogisticsController.handleGetRoute);
 router.post('/routes', requireRole(['admin', 'logistics_operator']), LogisticsController.handleCreateRoute);
 
 /**
