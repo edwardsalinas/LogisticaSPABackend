@@ -55,3 +55,63 @@ export const handleGetClients = async (req, res) => {
     return res.status(500).json({ success: false, message: error.message });
   }
 };
+
+/**
+ * Cronogramas (Schedules)
+ */
+export const handleGetSchedules = async (req, res) => {
+  try {
+    const result = await FleetService.getSchedules(req.query);
+    return res.status(200).json({ success: true, data: result });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const handleGetSchedule = async (req, res) => {
+  try {
+    const result = await FleetService.getSchedule(req.params.id);
+    return res.status(200).json({ success: true, data: result });
+  } catch (error) {
+    const status = error.code === 'PGRST116' ? 404 : 500;
+    return res.status(status).json({ success: false, message: error.message });
+  }
+};
+
+export const handleCreateSchedule = async (req, res) => {
+  try {
+    // Note: You might want to add validation here using a new scheduleSchema
+    const result = await FleetService.createSchedule(req.body);
+    return res.status(201).json({ success: true, data: result });
+  } catch (error) {
+    return res.status(400).json({ success: false, message: error.message });
+  }
+};
+
+export const handleUpdateSchedule = async (req, res) => {
+  try {
+    const result = await FleetService.updateSchedule(req.params.id, req.body);
+    return res.status(200).json({ success: true, data: result });
+  } catch (error) {
+    return res.status(400).json({ success: false, message: error.message });
+  }
+};
+
+export const handleDeleteSchedule = async (req, res) => {
+  try {
+    await FleetService.deleteSchedule(req.params.id);
+    return res.status(204).send();
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const handleGenerateRoutes = async (req, res) => {
+  try {
+    const daysAhead = req.body.days_ahead || 7;
+    const result = await FleetService.generateRoutesFromSchedules(daysAhead);
+    return res.status(200).json({ success: true, data: result });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};

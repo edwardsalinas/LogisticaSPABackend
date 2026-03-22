@@ -53,4 +53,14 @@ router.post('/drivers', requireRole(['admin', 'driver']), FleetController.handle
 
 router.get('/clients', requireRole(['admin', 'logistics_operator']), FleetController.handleGetClients);
 
+/**
+ * Cronogramas (Schedules)
+ */
+router.get('/schedules', FleetController.handleGetSchedules);
+router.get('/schedules/:id', FleetController.handleGetSchedule);
+router.post('/schedules', requireRole(['admin']), FleetController.handleCreateSchedule);
+router.put('/schedules/:id', requireRole(['admin']), FleetController.handleUpdateSchedule);
+router.delete('/schedules/:id', requireRole(['admin']), FleetController.handleDeleteSchedule);
+router.post('/schedules/generate', requireRole(['admin']), FleetController.handleGenerateRoutes);
+
 export default router;

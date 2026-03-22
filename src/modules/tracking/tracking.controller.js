@@ -141,17 +141,22 @@ export const handleLogTripEvent = async (req, res) => {
       console.error(`[Tracking Controller] Trip ${tripId} no encontrado en DB`);
       throw new Error('Viaje no encontrado');
     }
+    if (trip.status === 'completed') {
+      return res.status(400).json({ success: false, message: 'El viaje ya ha sido completado. No se pueden registrar más eventos.' });
+    }
 
     const route = trip.transport_routes;
     if (!route) {
        console.warn(`[Tracking Controller] Trip ${tripId} no tiene una ruta (transport_routes) asociada`);
     }
 
-    // 1.5 Obtener paquetes de esta ruta (para eventos y logs duplicados)
+    // 1.5 Obtener paquetes de esta ruta QUE NO ESTÉN ENTREGADOS
+    // (Para evitar duplicar el log de "Llegó al destino")
     const { data: routePackages } = await supabase
       .from('packages')
       .select('id')
-      .eq('route_id', trip.route_id);
+      .eq('route_id', trip.route_id)
+      .neq('status', 'entregado');
 
     // 2. Determinar el estado final basado en Geofencing
     let finalStatus = status || 'in_transit';
@@ -163,7 +168,7 @@ export const handleLogTripEvent = async (req, res) => {
       if (distanceToDest < 200) {
         finalStatus = `Llegó al destino: ${route.destination}`;
         
-        // Disparar eventos de entrega
+        // Disparar eventos de entrega SÓLO para paquetes no entregados
         if (routePackages && routePackages.length > 0) {
           const { default: eventBus } = await import('../../shared/utils/eventBus.js');
           for (const pkg of routePackages) {
@@ -242,7 +247,6 @@ export const handleLogTripEvent = async (req, res) => {
       });
     }
 
-    return res.status(201).json({ success: true, data: log });
     return res.status(201).json({ success: true, data: log });
   } catch (error) {
     console.error('[Tracking Controller] Error logueando evento de viaje:', error);

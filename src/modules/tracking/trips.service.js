@@ -35,12 +35,19 @@ export const startTrip = async (driverId, routeId) => {
   if (error) throw error;
 
   // Al iniciar el viaje, marcar todos los paquetes de esta ruta como "en_transito"
+  // Y actualizar el estado de la ruta propia
   if (routeId) {
-    await supabase
-      .from('packages')
-      .update({ status: 'en_transito' }) 
-      .eq('route_id', routeId)
-      .eq('status', 'asignado');
+    await Promise.all([
+      supabase
+        .from('packages')
+        .update({ status: 'en_transito' }) 
+        .eq('route_id', routeId)
+        .eq('status', 'asignado'),
+      supabase
+        .from('transport_routes')
+        .update({ status: 'en_transito' })
+        .eq('id', routeId)
+    ]);
   }
 
   return data;

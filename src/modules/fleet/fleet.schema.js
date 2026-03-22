@@ -20,3 +20,17 @@ export const driverSchema = z.object({
   phone: z.string().min(7, 'Número de teléfono inválido'),
   current_vehicle_id: z.string().uuid().optional(),
 });
+
+export const scheduleSchema = z.object({
+  predefined_route_id: z.string().uuid('ID de ruta inválido').optional().nullable(),
+  driver_id: z.string().uuid('ID de chofer inválido').optional().nullable(),
+  vehicle_id: z.string().uuid('ID de vehículo inválido').optional().nullable(),
+  origin: z.string().optional().nullable(),
+  destination: z.string().optional().nullable(),
+  origin_lat: z.number().optional().nullable(),
+  origin_lng: z.number().optional().nullable(),
+  dest_lat: z.number().optional().nullable(),
+  dest_lng: z.number().optional().nullable(),
+  day_times: z.record(z.string().regex(/^[0-6]$/), z.string().regex(/^([01]\d|2[0-3]):?([0-5]\d)$/, 'Formato de hora inválido (HH:mm)')),
+  is_active: z.boolean().default(true),
+});

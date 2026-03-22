@@ -90,7 +90,7 @@ export const getMapData = async (packageId) => {
   if (pkg.route_id) {
     const { data: tripData } = await supabase
       .from('driver_trips')
-      .select('*, driver:profiles(full_name)')
+      .select('*, driver:drivers(full_name)')
       .eq('route_id', pkg.route_id)
       .eq('status', 'active')
       .maybeSingle();
