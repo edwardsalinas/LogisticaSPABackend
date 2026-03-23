@@ -156,3 +156,32 @@ export const getRouteTracking = async (routeId) => {
 
   return logs || [];
 };
+
+/**
+ * Obtiene información de rastreo pública filtrando datos sensibles
+ */
+export const getPublicTrackingByCode = async (trackingCode) => {
+  // 1. Buscar el paquete por código de rastreo
+  const { data: pkg, error: pkgError } = await supabase
+    .from('packages')
+    .select('id, tracking_code, status, origen, destino, peso, created_at, sender_name, recipient_name')
+    .eq('tracking_code', trackingCode)
+    .maybeSingle();
+
+  if (pkgError) throw pkgError;
+  if (!pkg) return null;
+
+  // 2. Obtener logs asociados (sanitizados: solo status y timestamp)
+  const { data: logs, error: logsError } = await supabase
+    .from('tracking_logs')
+    .select('status, timestamp')
+    .eq('package_id', pkg.id)
+    .order('timestamp', { ascending: false });
+
+  if (logsError) throw logsError;
+
+  return {
+    package: pkg,
+    history: logs || []
+  };
+};

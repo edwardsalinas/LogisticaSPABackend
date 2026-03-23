@@ -19,7 +19,12 @@ export const packageSchema = z.object({
   peso: z.number().positive('El peso debe ser un número positivo'),
   description: z.string().optional(),
   route_id: z.string().uuid('route_id debe ser un UUID válido').nullish(),
-  sender_id: z.string().uuid('sender_id debe ser un UUID válido').optional(),
+  sender_id: z.string().uuid('sender_id debe ser un UUID válido').optional().nullable(),
+  sender_name: z.string().optional(),
+  sender_phone: z.string().optional(),
+  recipient_name: z.string().min(3, 'Nombre del destinatario es requerido'),
+  recipient_phone: z.string().optional(),
+  recipient_email: z.string().email('Email inválido').optional().or(z.literal('')),
 });
 
 export const routeSchema = z.object({

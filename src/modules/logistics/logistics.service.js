@@ -6,7 +6,11 @@ import { PACKAGE_STATUS, ROUTE_STATUS } from './logistics.schema.js';
  * Registra un nuevo paquete
  */
 export const createPackage = async (data, userId) => {
-  const { origen, destino, peso, description, route_id } = data;
+  const { 
+    origen, destino, peso, description, route_id,
+    sender_id, sender_name, sender_phone,
+    recipient_name, recipient_phone, recipient_email 
+  } = data;
   
   let initialStatus = PACKAGE_STATUS.PENDING;
   
@@ -25,7 +29,12 @@ export const createPackage = async (data, userId) => {
     .from('packages')
     .insert([
       {
-        sender_id: userId,
+        sender_id: sender_id || userId || null,
+        sender_name,
+        sender_phone,
+        recipient_name,
+        recipient_phone,
+        recipient_email,
         origen,
         destino,
         peso,

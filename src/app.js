@@ -7,6 +7,7 @@ import iamRoutes from './modules/iam/iam.routes.js';
 import { setupSwagger } from './shared/config/swagger.js';
 import aiAgentRoutes from './modules/ai-agent/ai-agent.routes.js';
 import checkpointsRoutes from './modules/logistics/checkpoints.routes.js';
+import statisticsRoutes from './modules/statistics/statistics.routes.js';
 
 const app = express();
 
@@ -22,5 +23,6 @@ app.use('/api/fleet', fleetRoutes);
 app.use('/api/tracking', trackingRoutes);
 app.use('/api/iam', iamRoutes);
 app.use('/api/ai-agent', aiAgentRoutes);
+app.use('/api/statistics', statisticsRoutes);
 
 export default app;

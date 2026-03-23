@@ -146,7 +146,7 @@ export const handleLogTripEvent = async (req, res) => {
     const routePackages = packagesResponse.data || [];
 
     // 2. Detección de Hitos de Ciclo de Vida
-    let finalStatus = status || 'in_transit';
+    let finalStatus = status || 'En tránsito';
     let detectedCheckpoint = null;
     let isDestination = false;
     let isDeparture = false;
@@ -281,5 +281,33 @@ export const handleGetRouteTracking = async (req, res) => {
   } catch (error) {
     console.error('[Tracking Controller] Error obteniendo historial de ruta:', error);
     return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+/**
+ * Endpoint público para rastreo anónimo por código
+ */
+export const handleGetPublicTracking = async (req, res) => {
+  try {
+    const { code } = req.params;
+    const trackingData = await TrackingService.getPublicTrackingByCode(code);
+
+    if (!trackingData) {
+      return res.status(404).json({
+        success: false,
+        message: 'Código de rastreo no encontrado o inválido'
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: trackingData
+    });
+  } catch (error) {
+    console.error('[Tracking Controller] Error en rastreo público:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Error al procesar la solicitud de rastreo'
+    });
   }
 };
