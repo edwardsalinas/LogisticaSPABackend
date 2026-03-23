@@ -18,7 +18,8 @@ export const handleStopTrip = async (req, res) => {
     const result = await TripsService.stopTrip(driverId);
     return res.status(200).json({ success: true, data: result });
   } catch (error) {
-    return res.status(500).json({ success: false, message: error.message });
+    const status = error.message.includes('No hay un viaje activo') ? 400 : 500;
+    return res.status(status).json({ success: false, message: error.message });
   }
 };
 

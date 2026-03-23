@@ -39,6 +39,14 @@ export const routeSchema = z.object({
     lng: z.number(),
     sequence_order: z.number().int()
   })).optional(),
+}).refine((data) => {
+  const now = new Date();
+  const depTime = new Date(data.departure_time);
+  // Permitimos un margen de 5 minutos por discrepancias de reloj
+  return depTime > new Date(now.getTime() - 5 * 60000);
+}, {
+  message: "La fecha de salida no puede estar en el pasado",
+  path: ["departure_time"]
 });
 
 export const assignmentSchema = z.object({

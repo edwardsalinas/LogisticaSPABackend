@@ -66,9 +66,11 @@ export const stopTrip = async (driverId) => {
     .eq('driver_id', driverId)
     .eq('status', 'active')
     .select()
-    .single();
+    .maybeSingle();
 
   if (error) throw error;
+  if (!data) throw new Error('No hay un viaje activo para finalizar (posiblemente ya fue cerrado automáticamente).');
+  
   return data;
 };
 

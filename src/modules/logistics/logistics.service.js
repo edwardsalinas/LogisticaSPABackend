@@ -175,11 +175,9 @@ eventBus.subscribe('tracking:package_delivered', async ({ packageId }) => {
     if (checkError) throw checkError;
 
     if (remaining.length === 0) {
-      console.log(`[Logistics Service] Completando ruta ${pkg.route_id} automáticamente.`);
-      await supabase
-        .from('transport_routes')
-        .update({ status: ROUTE_STATUS.COMPLETED })
-        .eq('id', pkg.route_id);
+      console.log(`[Logistics Service] Todos los paquetes de la ruta ${pkg.route_id} marcados como entregados. Esperando cierre manual o via Dashboard del conductor.`);
+      // La finalización de la ruta y el viaje ahora es responsabilidad del Cliente (Dashboard)
+      // al recibir la confirmación de llegada, para asegurar sincronía total de eventos.
     }
   } catch (err) {
     console.error(`[Logistics Service] Error en automatización:`, err);
