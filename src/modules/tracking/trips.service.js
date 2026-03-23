@@ -100,11 +100,15 @@ export const stopTrip = async (driverId) => {
 export const getActiveTrip = async (driverId) => {
   const { data, error } = await supabase
     .from('driver_trips')
-    .select('*, transport_routes(*)')
+    .select('*, transport_routes(*), tracking_logs(count)')
     .eq('driver_id', driverId)
     .eq('status', 'active')
     .maybeSingle();
 
   if (error) throw error;
+  
+  if (data) {
+    data.ping_count = data.tracking_logs?.[0]?.count || 0;
+  }
   return data;
 };

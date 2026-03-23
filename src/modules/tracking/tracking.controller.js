@@ -130,10 +130,12 @@ export const handleLogTripEvent = async (req, res) => {
     const { tripId } = req.params;
     const { lat, lng, status } = req.body;
     
-    // 1. Obtención paralela de viaje y paquetes no entregados
-    const [tripResponse, packagesResponse] = await Promise.all([
+    // 1. Obtención paralela de viaje, paquetes y checkpoints de ruta
+    const [tripResponse, packagesResponse, checkpointsResponse, visitsResponse] = await Promise.all([
       supabase.from('driver_trips').select('*, transport_routes(*)').eq('id', tripId).single(),
-      supabase.from('packages').select('id').eq('route_id', (await supabase.from('driver_trips').select('route_id').eq('id', tripId).single()).data?.route_id).neq('status', 'entregado')
+      supabase.from('packages').select('id').eq('route_id', (await supabase.from('driver_trips').select('route_id').eq('id', tripId).maybeSingle()).data?.route_id).neq('status', 'entregado'),
+      supabase.from('route_checkpoints').select('*').eq('route_id', (await supabase.from('driver_trips').select('route_id').eq('id', tripId).maybeSingle()).data?.route_id).order('sequence_order', { ascending: true }),
+      supabase.from('checkpoint_visits').select('checkpoint_id').eq('trip_id', tripId)
     ]);
 
     const trip = tripResponse.data;
@@ -144,9 +146,18 @@ export const handleLogTripEvent = async (req, res) => {
     
     const route = trip.transport_routes;
     const routePackages = packagesResponse.data || [];
+    const routeCheckpoints = checkpointsResponse.data || [];
+    const visitedIds = new Set((visitsResponse.data || []).map(v => v.checkpoint_id));
+
+    // Determinar el SIGUIENTE checkpoint pendiente (comparando con rc.id que es el checkpoint_id en visits)
+    const nextCp = routeCheckpoints.find(rc => !visitedIds.has(rc.id));
+    const nextTargetName = nextCp ? nextCp.name : route?.destination;
 
     // 2. Detección de Hitos de Ciclo de Vida
-    let finalStatus = status || 'En tránsito';
+    let finalStatus = (status === 'in_transit' || !status) 
+      ? `En tránsito: ${nextTargetName || 'Destino'}` 
+      : status;
+    
     let detectedCheckpoint = null;
     let isDestination = false;
     let isDeparture = false;
@@ -154,9 +165,8 @@ export const handleLogTripEvent = async (req, res) => {
     // A. Verificar llegada al destino (Prioridad Máxima)
     if (route?.dest_lat && route?.dest_lng) {
       const distToDest = calculateDistance(lat, lng, route.dest_lat, route.dest_lng);
-      console.log(`[Tracking] Trip: ${tripId} | Distancia a La Paz: ${Math.round(distToDest)}m`);
       
-      if (distToDest < 5000) {
+      if (distToDest < 1000) { // Reducimos a 1km para mayor precisión en historial
         console.log(`[Tracking] LLEGADA DETECTADA en ${route.destination}`);
         finalStatus = `Llegó al destino: ${route.destination}`;
         isDestination = true;
@@ -167,9 +177,17 @@ export const handleLogTripEvent = async (req, res) => {
     if (!isDestination) {
       const { data: geoData } = await supabase.rpc('check_checkpoint_geofence', { p_lat: lat, p_lng: lng, p_route_id: trip.route_id });
       if (geoData?.length > 0 && geoData[0].within_radius) {
-        console.log(`[Tracking] Checkpoint detectado: ${geoData[0].checkpoint_name}`);
-        finalStatus = `Llegó a ${geoData[0].checkpoint_name}`;
-        detectedCheckpoint = geoData[0];
+        const cpId = geoData[0].checkpoint_id;
+        
+        // SOLO si no ha sido visitado ya en este viaje
+        if (!visitedIds.has(cpId)) {
+          console.log(`[Tracking] Checkpoint NUEVO detectado: ${geoData[0].checkpoint_name}`);
+          finalStatus = `Llegó a ${geoData[0].checkpoint_name}`;
+          detectedCheckpoint = geoData[0];
+        } else {
+          // Si ya fue visitado, mantenemos el status de tránsito hacia el SIGUIENTE
+          console.log(`[Tracking] Ya en checkpoint (visita previa registrada): ${geoData[0].checkpoint_name}`);
+        }
       }
     }
 
