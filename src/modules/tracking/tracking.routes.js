@@ -35,7 +35,43 @@ const router = Router();
  */
 router.post('/', requireAuth, logTrackingEvent);
 router.post('/events', requireAuth, requireRole(['admin', 'driver']), logTrackingEvent);
+
+/**
+ * @swagger
+ * /api/tracking/logs/{packageId}:
+ *   get:
+ *     summary: Obtener el historial completo de eventos de un paquete
+ *     tags: [Tracking]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: packageId
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Lista de eventos obtenida
+ */
 router.get('/logs/:packageId', requireAuth, getTrackingLogs);
+
+/**
+ * @swagger
+ * /api/tracking/{packageId}/map-data:
+ *   get:
+ *     summary: Obtener todos los datos necesarios para renderizar el mapa de tracking
+ *     tags: [Tracking]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: packageId
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Datos estratégicos del mapa (Ruta, Checkpoints, Última posición)
+ */
 router.get('/:packageId/map-data', requireAuth, handleGetMapData);
 
 /**
@@ -101,7 +137,39 @@ router.get('/trip/active', requireAuth, requireRole(['driver']), handleGetActive
  *       - bearerAuth: []
  */
 router.post('/trip/:tripId/event', requireAuth, requireRole(['driver']), handleLogTripEvent);
+/**
+ * @swagger
+ * /api/tracking/route/{routeId}:
+ *   get:
+ *     summary: Obtener historial de tracking de una ruta completa
+ *     tags: [Tracking]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: routeId
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ */
 router.get('/route/:routeId', requireAuth, handleGetRouteTracking);
+
+/**
+ * @swagger
+ * /api/tracking/public/{code}:
+ *   get:
+ *     summary: Rastreo público (anónimo) mediante código de tracking
+ *     tags: [Tracking]
+ *     parameters:
+ *       - in: path
+ *         name: code
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Información de rastreo encontrada
+ *       404:
+ *         description: Código no encontrado
+ */
 router.get('/public/:code', handleGetPublicTracking);
 
 export default router;

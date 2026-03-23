@@ -51,16 +51,52 @@ router.post('/vehicles', requireRole(['admin']), FleetController.handleCreateVeh
 router.get('/drivers', FleetController.handleGetDrivers);
 router.post('/drivers', requireRole(['admin', 'driver']), FleetController.handleRegisterDriver);
 
+/**
+ * @swagger
+ * /api/fleet/clients:
+ *   get:
+ *     summary: Listar todos los clientes registrados (Empresas/Remitentes recuentes)
+ *     tags: [Fleet]
+ *     security:
+ *       - bearerAuth: []
+ */
 router.get('/clients', requireRole(['admin', 'logistics_operator']), FleetController.handleGetClients);
 
 /**
  * Cronogramas (Schedules)
+ */
+/**
+ * @swagger
+ * /api/fleet/schedules:
+ *   get:
+ *     summary: Obtener todos los cronogramas de despacho
+ *     tags: [Fleet]
+ *     security:
+ *       - bearerAuth: []
+ *   post:
+ *     summary: Crear un nuevo cronograma de despacho
+ *     tags: [Fleet]
+ *     security:
+ *       - bearerAuth: []
  */
 router.get('/schedules', FleetController.handleGetSchedules);
 router.get('/schedules/:id', FleetController.handleGetSchedule);
 router.post('/schedules', requireRole(['admin']), FleetController.handleCreateSchedule);
 router.put('/schedules/:id', requireRole(['admin']), FleetController.handleUpdateSchedule);
 router.delete('/schedules/:id', requireRole(['admin']), FleetController.handleDeleteSchedule);
+
+/**
+ * @swagger
+ * /api/fleet/schedules/generate:
+ *   post:
+ *     summary: Generar rutas automáticamente basadas en cronogramas activos
+ *     tags: [Fleet]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Rutas generadas exitosamente
+ */
 router.post('/schedules/generate', requireRole(['admin']), FleetController.handleGenerateRoutes);
 
 export default router;

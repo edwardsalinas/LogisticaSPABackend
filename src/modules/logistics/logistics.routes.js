@@ -20,10 +20,12 @@ router.use(requireAuth);
  *           schema:
  *             type: object
  *             properties:
- *               origen: { type: string }
- *               destino: { type: string }
- *               peso: { type: number }
- *               description: { type: string }
+ *               origen: { type: string, description: "Dirección de origen" }
+ *               destino: { type: string, description: "Dirección de destino" }
+ *               peso: { type: number, description: "Peso en kg" }
+ *               description: { type: string, description: "Descripción del contenido" }
+ *               sender_name: { type: string, description: "Nombre del remitente (Obligatorio para invitados)" }
+ *               recipient_name: { type: string, description: "Nombre del destinatario" }
  *     responses:
  *       201:
  *         description: Paquete creado
