@@ -2,6 +2,8 @@ import { z } from 'zod';
 import * as TrackingService from './tracking.service.js';
 import { trackingEventSchema } from './tracking.schema.js';
 import supabase from '../../shared/config/supabase.js';
+import eventBus from '../../shared/utils/eventBus.js';
+import * as PackagesService from '../logistics/packages.service.js';
 
 export const logTrackingEvent = async (req, res) => {
   try {
@@ -128,126 +130,83 @@ export const handleLogTripEvent = async (req, res) => {
     const { tripId } = req.params;
     const { lat, lng, status } = req.body;
     
-    console.log(`[Tracking Controller] Reporte de viaje recibido: Trip=${tripId}, Lat=${lat}, Lng=${lng}`);
+    // 1. Obtención paralela de viaje y paquetes no entregados
+    const [tripResponse, packagesResponse] = await Promise.all([
+      supabase.from('driver_trips').select('*, transport_routes(*)').eq('id', tripId).single(),
+      supabase.from('packages').select('id').eq('route_id', (await supabase.from('driver_trips').select('route_id').eq('id', tripId).single()).data?.route_id).neq('status', 'entregado')
+    ]);
 
-    // 1. Obtener los detalles del viaje y su ruta relacionada
-    const { data: trip } = await supabase
-      .from('driver_trips')
-      .select('*, transport_routes(*)')
-      .eq('id', tripId)
-      .single();
-
-    if (!trip) {
-      console.error(`[Tracking Controller] Trip ${tripId} no encontrado en DB`);
-      throw new Error('Viaje no encontrado');
-    }
-    if (trip.status === 'completed') {
-      return res.status(400).json({ success: false, message: 'El viaje ya ha sido completado. No se pueden registrar más eventos.' });
-    }
+    const trip = tripResponse.data;
+    if (!trip) throw new Error('Viaje no encontrado');
+    if (trip.status === 'completed') return res.status(400).json({ success: false, message: 'Viaje completado' });
 
     const route = trip.transport_routes;
-    if (!route) {
-       console.warn(`[Tracking Controller] Trip ${tripId} no tiene una ruta (transport_routes) asociada`);
-    }
+    const routePackages = packagesResponse.data || [];
 
-    // 1.5 Obtener paquetes de esta ruta QUE NO ESTÉN ENTREGADOS
-    // (Para evitar duplicar el log de "Llegó al destino")
-    const { data: routePackages } = await supabase
-      .from('packages')
-      .select('id')
-      .eq('route_id', trip.route_id)
-      .neq('status', 'entregado');
-
-    // 2. Determinar el estado final basado en Geofencing
+    // 2. Lógica de Geofencing (Sincrónica por naturaleza del flujo)
     let finalStatus = status || 'in_transit';
     let detectedCheckpoint = null;
+    let isDestination = false;
 
-    // 2.1 Verificar llegada al destino final
-    if (route && route.dest_lat && route.dest_lng) {
-      const distanceToDest = calculateDistance(lat, lng, route.dest_lat, route.dest_lng);
-      if (distanceToDest < 200) {
+    if (route?.dest_lat && route?.dest_lng) {
+      if (calculateDistance(lat, lng, route.dest_lat, route.dest_lng) < 200) {
         finalStatus = `Llegó al destino: ${route.destination}`;
-        
-        // Disparar eventos de entrega SÓLO para paquetes no entregados
-        if (routePackages && routePackages.length > 0) {
-          const { default: eventBus } = await import('../../shared/utils/eventBus.js');
-          for (const pkg of routePackages) {
-            eventBus.publish('tracking:package_delivered', { packageId: pkg.id });
-          }
-        }
+        isDestination = true;
       } else {
-        // 2.2 Verificar Checkpoints Intermedios
-        try {
-          const { data: geoData } = await supabase.rpc('check_checkpoint_geofence', {
-            p_lat: lat,
-            p_lng: lng,
-            p_route_id: trip.route_id,
-          });
-
-          if (geoData && geoData.length > 0 && geoData[0].within_radius) {
-            finalStatus = `Llegó a ${geoData[0].checkpoint_name}`;
-            detectedCheckpoint = geoData[0];
-          }
-        } catch (geoError) {
-          console.error('[Tracking Controller] Error en geofencing:', geoError);
+        const { data: geoData } = await supabase.rpc('check_checkpoint_geofence', { p_lat: lat, p_lng: lng, p_route_id: trip.route_id });
+        if (geoData?.length > 0 && geoData[0].within_radius) {
+          finalStatus = `Llegó a ${geoData[0].checkpoint_name}`;
+          detectedCheckpoint = geoData[0];
         }
       }
     }
 
-    // 3. Registrar log de tracking para el VIAJE con el estado final determinado
-    const { data: log, error: logError } = await supabase
+    // 3. Persistencia PARALELA de logs y disparo de eventos
+    // Insertamos el log principal primero para obtener el ID si es checkpoint
+    const { data: mainLog, error: logError } = await supabase
       .from('tracking_logs')
-      .insert({
-        trip_id: tripId,
-        lat,
-        lng,
-        status: finalStatus,
-        timestamp: new Date().toISOString()
-      })
-      .select()
-      .single();
+      .insert({ trip_id: tripId, lat, lng, status: finalStatus, timestamp: new Date().toISOString() })
+      .select().single();
 
     if (logError) throw logError;
 
-    // 4. DUPLICAR Log para cada paquete de la ruta con el estado final
-    if (routePackages && routePackages.length > 0) {
-      const packageLogs = routePackages.map(pkg => ({
-        package_id: pkg.id,
-        trip_id: tripId,
-        lat,
-        lng,
-        status: finalStatus,
-        timestamp: new Date().toISOString()
-      }));
+    const parallelTasks = [];
 
-      await supabase.from('tracking_logs').insert(packageLogs);
+    // A. Duplicar logs para cada paquete
+    if (routePackages.length > 0) {
+      const packageLogs = routePackages.map(pkg => ({
+        package_id: pkg.id, trip_id: tripId, lat, lng, status: finalStatus, timestamp: new Date().toISOString()
+      }));
+      parallelTasks.push(supabase.from('tracking_logs').insert(packageLogs));
     }
 
-    // 5. Si fue un checkpoint, registrar la visita y publicar evento
+    // B. Si fue checkpoint, registrar visita y disparar evento
     if (detectedCheckpoint) {
-      // Registrar visita vinculada al log principal
-      await supabase
-        .from('checkpoint_visits')
-        .insert({
-          checkpoint_id: detectedCheckpoint.checkpoint_id,
-          tracking_log_id: log.id,
-          distance_meters: detectedCheckpoint.distance_meters,
-          within_radius: true,
-        });
-
-      // Notificar al sistema
-      const { default: eventBus } = await import('../../shared/utils/eventBus.js');
+      parallelTasks.push(supabase.from('checkpoint_visits').insert({
+        checkpoint_id: detectedCheckpoint.checkpoint_id,
+        tracking_log_id: mainLog.id,
+        distance_meters: detectedCheckpoint.distance_meters,
+        within_radius: true
+      }));
+      
       eventBus.publish('tracking:checkpoint_reached', {
         route_id: trip.route_id,
         checkpoint_id: detectedCheckpoint.checkpoint_id,
         checkpoint_name: detectedCheckpoint.checkpoint_name,
-        trip_id: tripId,
-        lat,
-        lng
+        trip_id: tripId, lat, lng
       });
     }
 
-    return res.status(201).json({ success: true, data: log });
+    // C. Si llegó al destino, disparar eventos de entrega
+    if (isDestination) {
+      routePackages.forEach(pkg => eventBus.publish('tracking:package_delivered', { packageId: pkg.id }));
+    }
+
+    // Ejecutar tareas de persistencia secundarias sin bloquear la respuesta si es posible
+    // (O bloquear para asegurar integridad, aquí usamos Promise.all para seguridad)
+    await Promise.all(parallelTasks);
+
+    return res.status(201).json({ success: true, data: mainLog });
   } catch (error) {
     console.error('[Tracking Controller] Error logueando evento de viaje:', error);
     return res.status(500).json({ success: false, message: error.message });

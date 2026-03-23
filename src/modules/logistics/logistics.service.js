@@ -46,32 +46,23 @@ export const createPackage = async (data, userId) => {
  * Lista todos los paquetes (con filtros opcionales)
  */
 export const getPackages = async (filters = {}) => {
-  let query = supabase.from('packages').select('*').order('created_at', { ascending: false });
+  const { page = 1, limit = 50 } = filters;
+  const from = (page - 1) * limit;
+  const to = from + limit - 1;
+
+  let query = supabase
+    .from('packages')
+    .select('*, sender:profiles(full_name), transport_routes(departure_time)')
+    .order('created_at', { ascending: false });
+
   if (filters.status) query = query.eq('status', filters.status);
   if (filters.sender_id) query = query.eq('sender_id', filters.sender_id);
+  
+  // Aplicar paginación del servidor
+  query = query.range(from, to);
+
   const { data, error } = await query;
   if (error) throw error;
-
-  // Mapear nombres de remitentes desde Auth (ya que no hay tabla de profiles para Join)
-  try {
-    const { data: { users }, error: authError } = await supabase.auth.admin.listUsers();
-    if (!authError) {
-      return data.map(pkg => {
-        const user = users.find(u => u.id === pkg.sender_id);
-        return {
-          ...pkg,
-          sender: user ? {
-            full_name: user.user_metadata?.full_name || 
-                       (user.user_metadata?.first_name 
-                         ? `${user.user_metadata.first_name} ${user.user_metadata.last_name || ''}`.trim()
-                         : user.email)
-          } : { full_name: 'Sin Nombre' }
-        };
-      });
-    }
-  } catch (err) {
-    console.error('[Logistics Service] Error al mapear remitentes:', err);
-  }
 
   return data;
 };
@@ -118,29 +109,16 @@ export const createRoute = async (data) => {
  * Lista todas las rutas de transporte (con filtros opcionales)
  */
 export const getRoutes = async (filters = {}) => {
-  let query = supabase.from('transport_routes').select('*').order('created_at', { ascending: false });
+  let query = supabase
+    .from('transport_routes')
+    .select('*, driver:drivers(full_name)')
+    .order('created_at', { ascending: false });
   
   if (filters.status) query = query.eq('status', filters.status);
   if (filters.driver_id) query = query.eq('driver_id', filters.driver_id);
   
   const { data, error } = await query;
   if (error) throw error;
-
-  // Mapear nombres de choferes desde la tabla 'drivers'
-  try {
-    const { data: drivers, error: dError } = await supabase.from('drivers').select('id, full_name');
-    if (!dError) {
-      return data.map(r => {
-        const d = drivers.find(drv => drv.id === r.driver_id);
-        return {
-          ...r,
-          driver: d ? { full_name: d.full_name } : null
-        };
-      });
-    }
-  } catch (err) {
-    console.error('[Logistics Service] Error mapeando conductores en rutas:', err);
-  }
 
   return data;
 };
@@ -216,51 +194,14 @@ export const getRoute = async (routeId) => {
     .from('transport_routes')
     .select(`
       *,
-      packages (*),
+      driver:drivers(full_name),
+      packages (*, sender:profiles(full_name)),
       route_checkpoints (*)
     `)
     .eq('id', routeId)
     .single();
 
   if (error) throw error;
-
-  // Mapear nombre del conductor
-  if (data.driver_id) {
-    try {
-      const { data: driver, error: dError } = await supabase
-        .from('drivers')
-        .select('full_name')
-        .eq('id', data.driver_id)
-        .maybeSingle();
-      
-      if (!dError && driver) {
-        data.driver = driver;
-      }
-    } catch (err) {
-      console.error('[Logistics Service] Error mapeando conductor en ruta:', err);
-    }
-  }
-
-  // Mapear nombres de remitentes para los paquetes de la ruta
-  try {
-    const { data: { users }, error: authError } = await supabase.auth.admin.listUsers();
-    if (!authError && data.packages) {
-      data.packages = data.packages.map(pkg => {
-        const user = users.find(u => u.id === pkg.sender_id);
-        return {
-          ...pkg,
-          sender: user ? {
-            full_name: user.user_metadata?.full_name || 
-                       (user.user_metadata?.first_name 
-                         ? `${user.user_metadata.first_name} ${user.user_metadata.last_name || ''}`.trim()
-                         : user.email)
-          } : { full_name: 'Sin Nombre' }
-        };
-      });
-    }
-  } catch (err) {
-    console.error('[Logistics Service] Error al mapear remitentes en ruta:', err);
-  }
 
   return {
     ...data,
