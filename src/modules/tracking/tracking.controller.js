@@ -271,3 +271,15 @@ export const handleLogTripEvent = async (req, res) => {
     return res.status(500).json({ success: false, message: error.message });
   }
 };
+
+export const handleGetRouteTracking = async (req, res) => {
+  try {
+    const { routeId } = req.params;
+    const logs = await TrackingService.getRouteTracking(routeId);
+    
+    return res.status(200).json({ success: true, data: logs });
+  } catch (error) {
+    console.error('[Tracking Controller] Error obteniendo historial de ruta:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};

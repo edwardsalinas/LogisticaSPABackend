@@ -107,4 +107,21 @@ router.post('/routes/:id/assign', requireRole(['admin', 'logistics_operator']), 
  */
 router.get('/predefined-routes', LogisticsController.handleGetPredefinedRoutes);
 
+/**
+ * @swagger
+ * /api/logistics/packages/{id}/deliver:
+ *   patch:
+ *     summary: Marcar paquete como entregado
+ *     tags: [Logistics]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: Paquete entregado
+ */
+router.patch('/packages/:id/deliver', LogisticsController.handleDeliverPackage);
+
 export default router;

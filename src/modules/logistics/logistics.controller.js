@@ -117,3 +117,12 @@ export const handleGetRoute = async (req, res) => {
     return res.status(500).json({ success: false, message: error.message });
   }
 };
+export const handleDeliverPackage = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const result = await LogisticsService.deliverPackage(id);
+    return res.status(200).json({ success: true, data: result });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};

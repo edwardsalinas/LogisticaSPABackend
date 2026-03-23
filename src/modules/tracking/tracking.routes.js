@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { logTrackingEvent, getTrackingLogs, handleGetMapData, handleLogTripEvent } from './tracking.controller.js';
+import { logTrackingEvent, getTrackingLogs, handleGetMapData, handleLogTripEvent, handleGetRouteTracking } from './tracking.controller.js';
 import { handleStartTrip, handleStopTrip, handleGetActiveTrip } from './trips.controller.js';
 import { requireAuth, requireRole } from '../iam/iam.middleware.js';
 
@@ -101,5 +101,6 @@ router.get('/trip/active', requireAuth, requireRole(['driver']), handleGetActive
  *       - bearerAuth: []
  */
 router.post('/trip/:tripId/event', requireAuth, requireRole(['driver']), handleLogTripEvent);
+router.get('/route/:routeId', requireAuth, handleGetRouteTracking);
 
 export default router;

@@ -129,3 +129,30 @@ export const getMapData = async (packageId) => {
     tracking_logs: logs
   };
 };
+
+/**
+ * Obtiene el historial completo de tracking para una RUTA específica
+ */
+export const getRouteTracking = async (routeId) => {
+  // 1. Encontrar los viajes asociados a esta ruta
+  const { data: trips, error: tripsError } = await supabase
+    .from('driver_trips')
+    .select('id, status, started_at, ended_at')
+    .eq('route_id', routeId)
+    .order('created_at', { ascending: false });
+
+  if (tripsError) throw tripsError;
+  if (!trips || trips.length === 0) return [];
+
+  // 2. Obtener todos los logs de tracking para esos viajes
+  const tripIds = trips.map(t => t.id);
+  const { data: logs, error: logsError } = await supabase
+    .from('tracking_logs')
+    .select('*')
+    .in('trip_id', tripIds)
+    .order('timestamp', { ascending: true });
+
+  if (logsError) throw logsError;
+
+  return logs || [];
+};

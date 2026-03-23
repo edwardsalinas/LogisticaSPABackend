@@ -316,3 +316,33 @@ export const getPredefinedRoutes = async () => {
   if (error) throw error;
   return data;
 };
+/**
+ * Marca un paquete como entregado
+ */
+export const deliverPackage = async (packageId) => {
+  const { data: pkg, error: fetchError } = await supabase
+    .from('packages')
+    .select('id, status, route_id')
+    .eq('id', packageId)
+    .single();
+
+  if (fetchError) throw fetchError;
+  if (pkg.status === PACKAGE_STATUS.DELIVERED) return pkg;
+
+  const { data: updated, error } = await supabase
+    .from('packages')
+    .update({ 
+      status: PACKAGE_STATUS.DELIVERED,
+      delivered_at: new Date().toISOString()
+    })
+    .eq('id', packageId)
+    .select()
+    .single();
+
+  if (error) throw error;
+
+  // Emitir evento para automatizaciones (como cerrar la ruta si es el último paquete)
+  eventBus.emit('tracking:package_delivered', { packageId });
+
+  return updated;
+};

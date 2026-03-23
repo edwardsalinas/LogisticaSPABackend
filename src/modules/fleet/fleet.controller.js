@@ -82,6 +82,14 @@ export const handleCreateSchedule = async (req, res) => {
   try {
     // Note: You might want to add validation here using a new scheduleSchema
     const result = await FleetService.createSchedule(req.body);
+    
+    // Auto-generación silenciosa a 30 días para que existan las instancias físicas para los conductores
+    try {
+      await FleetService.generateRoutesFromSchedules(30);
+    } catch (e) {
+      console.error('Error en proyección silenciosa:', e);
+    }
+
     return res.status(201).json({ success: true, data: result });
   } catch (error) {
     return res.status(400).json({ success: false, message: error.message });
@@ -91,6 +99,14 @@ export const handleCreateSchedule = async (req, res) => {
 export const handleUpdateSchedule = async (req, res) => {
   try {
     const result = await FleetService.updateSchedule(req.params.id, req.body);
+
+    // Auto-generación silenciosa a 30 días post-actualización
+    try {
+      await FleetService.generateRoutesFromSchedules(30);
+    } catch (e) {
+      console.error('Error en proyección silenciosa:', e);
+    }
+
     return res.status(200).json({ success: true, data: result });
   } catch (error) {
     return res.status(400).json({ success: false, message: error.message });

@@ -57,21 +57,41 @@ export const startTrip = async (driverId, routeId) => {
  * Detiene el viaje activo del conductor
  */
 export const stopTrip = async (driverId) => {
-  const { data, error } = await supabase
+  // 1. Buscar el viaje activo actual
+  const { data: trip, error: fetchError } = await supabase
     .from('driver_trips')
-    .update({
-      status: 'completed',
-      ended_at: new Date().toISOString(),
-    })
+    .select('id, route_id')
     .eq('driver_id', driverId)
     .eq('status', 'active')
-    .select()
     .maybeSingle();
 
-  if (error) throw error;
-  if (!data) throw new Error('No hay un viaje activo para finalizar (posiblemente ya fue cerrado automáticamente).');
+  if (fetchError) throw fetchError;
   
-  return data;
+  if (!trip) {
+    // Si no hay viaje activo, devolver éxito pero indicar que ya estaba cerrado
+    return { success: true, message: 'No habia un viaje activo para cerrar' };
+  }
+
+  // 2. Ejecutar actualizaciones en paralelo: El viaje y la ruta asociada
+  const [tripUpdate] = await Promise.all([
+    supabase
+      .from('driver_trips')
+      .update({
+        status: 'completed',
+        ended_at: new Date().toISOString(),
+      })
+      .eq('id', trip.id)
+      .select()
+      .single(),
+    
+    trip.route_id ? supabase
+      .from('transport_routes')
+      .update({ status: 'completada' })
+      .eq('id', trip.route_id) : Promise.resolve()
+  ]);
+
+  if (tripUpdate.error) throw tripUpdate.error;
+  return tripUpdate.data;
 };
 
 /**
