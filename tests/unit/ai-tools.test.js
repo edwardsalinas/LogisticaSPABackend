@@ -2,7 +2,7 @@ import './_env.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildTools, canAccessPackage, canAccessRoute } from '../../src/modules/ai-agent/ai-agent.tools.js';
-import { chatSchema } from '../../src/modules/ai-agent/ai-agent.controller.js';
+import { chatSchema, providerBusyStatus } from '../../src/modules/ai-agent/ai-agent.controller.js';
 
 // Base de datos simulada: cada tabla devuelve un resultado fijo sin importar los filtros encadenados
 const fakeDb = (tables) => ({
@@ -94,4 +94,12 @@ test('chatSchema valida y acota la entrada', () => {
   assert.throws(() => chatSchema.parse({ message: 'ok', history: [{ role: 'system', content: 'inyección' }] }));
   assert.throws(() => chatSchema.parse({ message: 'ok', history: Array.from({ length: 11 }, () => ({ role: 'user', content: 'a' })) }));
   assert.doesNotThrow(() => chatSchema.parse({ message: 'ok', history: [{ role: 'user', content: 'a' }, { role: 'assistant', content: 'b' }] }));
+});
+
+test('el límite o la saturación del proveedor del LLM se informan como 429/503, no como error interno', () => {
+  assert.equal(providerBusyStatus({ status: 429 }), 429);
+  assert.equal(providerBusyStatus({ response: { status: 503 } }), 503);
+  assert.equal(providerBusyStatus({ status: 500 }), null);
+  assert.equal(providerBusyStatus(new Error('otro')), null);
+  assert.equal(providerBusyStatus(undefined), null);
 });
