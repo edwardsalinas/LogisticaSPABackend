@@ -37,7 +37,8 @@ if (packageIds.length) {
 
 // 2) paquetes de prueba (solo los listados y con la etiqueta)
 if (packageIds.length) {
-  await step('paquetes', db.from('packages').delete({ count: 'exact' }).in('id', packageIds).eq('description', tag));
+  // solo los de la lista Y con la marca: en la descripción o en el nombre del destinatario (el asistente a veces omite la descripción)
+  await step('paquetes', db.from('packages').delete({ count: 'exact' }).in('id', packageIds).or(`description.eq.${tag},recipient_name.like.${tag}%`));
 }
 
 // 3) rutas de prueba con la función atómica de la migración 019 (borra también sus viajes y checkpoints)
