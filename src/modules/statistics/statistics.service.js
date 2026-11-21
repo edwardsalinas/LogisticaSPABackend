@@ -1,116 +1,129 @@
 import supabase from '../../shared/config/supabase.js';
+import { PACKAGE_STATUS, ROUTE_STATUS } from '../logistics/logistics.schema.js';
+
+/**
+ * Estadísticas calculadas con datos reales de la base. No se usan valores de relleno:
+ * si no hay datos, el resultado es 0.
+ */
+
+const EARTH_RADIUS_KM = 6371;
+
+/** Distancia entre dos coordenadas (fórmula de Haversine), en kilómetros. */
+export const haversineKm = (lat1, lng1, lat2, lng2) => {
+  const toRad = (d) => (d * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return 2 * EARTH_RADIUS_KM * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+};
+
+/** Variación porcentual formateada ("+12.5%"). Sin base de comparación: 100% si hubo actividad, 0% si no. */
+export const formatChange = (current, previous) => {
+  const pct = previous > 0 ? ((current - previous) / previous) * 100 : current > 0 ? 100 : 0;
+  const rounded = Math.round(pct * 10) / 10;
+  return `${rounded > 0 ? '+' : ''}${rounded}%`;
+};
+
+const startOfDay = (offsetDays = 0) => {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() + offsetDays);
+  return d.toISOString();
+};
+
+const count = async (query) => {
+  const { count: total, error } = await query;
+  if (error) throw error;
+  return total || 0;
+};
+
+const countTable = (table) => supabase.from(table).select('*', { count: 'exact', head: true });
+const countPackages = (status) => {
+  const q = countTable('packages');
+  return status ? q.eq('status', status) : q;
+};
 
 export const statisticsService = {
   /**
-   * Obtiene estadísticas simplificadas para la página de login
+   * Estadísticas simplificadas para la página de login
    */
   async getPublicStats() {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const [totalPackages, packagesToday, activeUnits, delivered] = await Promise.all([
+      count(countPackages()),
+      count(countPackages().gte('created_at', startOfDay())),
+      count(countTable('transport_routes').eq('status', ROUTE_STATUS.ACTIVE)),
+      count(countPackages(PACKAGE_STATUS.DELIVERED)),
+    ]);
 
-    // 1. Total de paquetes (conteo global para "Movimientos")
-    const { count: totalPackages } = await supabase
-      .from('packages')
-      .select('*', { count: 'exact', head: true });
+    const efficiency = totalPackages > 0 ? Math.round((delivered / totalPackages) * 1000) / 10 : 0;
 
-    // 2. Paquetes de hoy
-    const { count: packagesToday } = await supabase
-      .from('packages')
-      .where('created_at', '>=', today.toISOString())
-      .select('*', { count: 'exact', head: true });
-
-    // 3. Unidades activas (Rutas en curso)
-    const { count: activeUnits } = await supabase
-      .from('routes')
-      .select('*', { count: 'exact', head: true })
-      .eq('status', 'active');
-
-    // 4. Eficiencia (Calculado como ratio de entregados)
-    const { count: deliveredCount } = await supabase
-      .from('packages')
-      .select('*', { count: 'exact', head: true })
-      .eq('status', 'delivered');
-
-    const efficiency = totalPackages > 0 
-      ? Math.round((deliveredCount / totalPackages) * 1000) / 10 
-      : 98.5; // Fallback a un valor alto si es nuevo
-
-    return {
-      totalPackages: totalPackages || 1284,
-      packagesToday: packagesToday || 45,
-      activeUnits: activeUnits || 12,
-      efficiency: efficiency || 98.2
-    };
+    return { totalPackages, packagesToday, activeUnits, efficiency };
   },
 
   /**
-   * Obtiene métricas detalladas para el Dashboard interno
+   * Métricas detalladas para el Dashboard interno
    */
   async getDashboardStats() {
-    const today = new Date();
-    const startOfDay = new Date(today);
-    startOfDay.setHours(0, 0, 0, 0);
-
-    // 1. Conteo de vehículos y conductores (Ya existentes pero centralizados aquí)
-    const [{ count: totalVehicles }, { count: totalDrivers }] = await Promise.all([
-      supabase.from('vehicles').select('*', { count: 'exact', head: true }),
-      supabase.from('drivers').select('*', { count: 'exact', head: true })
+    const [
+      totalVehicles,
+      totalDrivers,
+      packagesToday,
+      packagesYesterday,
+      activeRoutes,
+      inTransit,
+      pending,
+      delivered,
+      totalPackages,
+    ] = await Promise.all([
+      count(countTable('vehicles')),
+      count(countTable('drivers')),
+      count(countPackages().gte('created_at', startOfDay())),
+      count(countPackages().gte('created_at', startOfDay(-1)).lt('created_at', startOfDay())),
+      count(countTable('transport_routes').eq('status', ROUTE_STATUS.ACTIVE)),
+      count(countPackages(PACKAGE_STATUS.IN_TRANSIT)),
+      count(countPackages(PACKAGE_STATUS.PENDING)),
+      count(countPackages(PACKAGE_STATUS.DELIVERED)),
+      count(countPackages()),
     ]);
 
-    // 2. Paquetes creados hoy
-    const { count: packagesToday } = await supabase
-      .from('packages')
-      .select('*', { count: 'exact', head: true })
-      .gte('created_at', startOfDay.toISOString());
+    // Distancia acumulada de las rutas completadas (Haversine entre origen y destino)
+    let totalKm = 0;
+    const { data: completed } = await supabase
+      .from('transport_routes')
+      .select('origin_lat, origin_lng, dest_lat, dest_lng')
+      .eq('status', ROUTE_STATUS.COMPLETED);
+    for (const r of completed || []) {
+      if ([r.origin_lat, r.origin_lng, r.dest_lat, r.dest_lng].every((v) => typeof v === 'number')) {
+        totalKm += haversineKm(r.origin_lat, r.origin_lng, r.dest_lat, r.dest_lng);
+      }
+    }
 
-    // 3. Rutas activas
-    const { count: activeRoutes } = await supabase
-      .from('routes')
-      .select('*', { count: 'exact', head: true })
-      .eq('status', 'active');
-
-    // 4. Distancia acumulada (Suma de distancias de rutas finalizadas)
-    // Asumimos que cada ruta tiene una distancia estimada o calculada.
-    // Si no existe el campo, usamos un promedio por ruta para el placeholder dinámico.
-    const { data: completedRoutes } = await supabase
-      .from('routes')
-      .select('origen, destino')
-      .eq('status', 'completed');
-    
-    // Por ahora simulamos la distancia en base al número de rutas completadas (ej. 150km promedio)
-    const totalDistance = (completedRoutes?.length || 0) * 142.5;
-
-    // 5. Contadores granulares para LiveMapSummary
-    const [{ count: inTransit }, { count: pending }, { count: delivered }] = await Promise.all([
-      supabase.from('packages').select('*', { count: 'exact', head: true }).eq('status', 'in_transit'),
-      supabase.from('packages').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
-      supabase.from('packages').select('*', { count: 'exact', head: true }).eq('status', 'delivered')
-    ]);
-
-    // 5.1 Simulación de críticas (retrasadas)
-    const delayed = Math.round(inTransit * 0.1); 
-
-    // 6. SLA Global ( Ratio entregados / total )
-    const { count: totalPackages } = await supabase
-      .from('packages')
-      .select('*', { count: 'exact', head: true });
-    
-    const sla = totalPackages > 0 ? Math.round((delivered / totalPackages) * 100) : 98;
-
-    // 7. Rendimiento (Variación hoy vs ayer o promedio)
-    const performance = "+12.5%";
+    // Retrasados: paquetes asignados cuya ruta ya debió salir (hora de salida vencida y el viaje no inició)
+    let delayed = 0;
+    try {
+      delayed = await count(
+        supabase
+          .from('packages')
+          .select('id, transport_routes!inner(departure_time)', { count: 'exact', head: true })
+          .eq('status', PACKAGE_STATUS.ASSIGNED)
+          .lt('transport_routes.departure_time', new Date().toISOString())
+      );
+    } catch (err) {
+      console.warn('[Statistics] No se pudo calcular los despachos retrasados:', err.message);
+    }
 
     return {
-      totalVehicles: totalVehicles || 0,
-      totalDrivers: totalDrivers || 0,
-      packagesToday: packagesToday || 0,
-      activeRoutes: activeRoutes || 0,
-      totalDistance: Math.round(totalDistance * 10) / 10 || 0,
-      sla: sla || 0,
-      performance: performance,
-      packagesInTransit: inTransit || 0,
-      packagesPending: pending || 0,
-      packagesDelayed: delayed || 0
+      totalVehicles,
+      totalDrivers,
+      packagesToday,
+      activeRoutes,
+      // El dashboard muestra la distancia en miles de km (sufijo "k")
+      totalDistance: Math.round((totalKm / 1000) * 10) / 10,
+      sla: totalPackages > 0 ? Math.round((delivered / totalPackages) * 100) : 0,
+      performance: formatChange(packagesToday, packagesYesterday),
+      packagesInTransit: inTransit,
+      packagesPending: pending,
+      packagesDelayed: delayed,
     };
-  }
+  },
 };

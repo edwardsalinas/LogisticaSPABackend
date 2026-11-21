@@ -124,6 +124,6 @@ router.get('/predefined-routes', LogisticsController.handleGetPredefinedRoutes);
  *       200:
  *         description: Paquete entregado
  */
-router.patch('/packages/:id/deliver', LogisticsController.handleDeliverPackage);
+router.patch('/packages/:id/deliver', requireRole(['admin', 'logistics_operator', 'driver']), LogisticsController.handleDeliverPackage);
 
 export default router;

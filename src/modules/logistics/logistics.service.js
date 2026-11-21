@@ -1,10 +1,14 @@
 import supabase from '../../shared/config/supabase.js';
+import { randomBytes } from 'node:crypto';
 import eventBus from '../../shared/utils/eventBus.js';
 import { PACKAGE_STATUS, ROUTE_STATUS } from './logistics.schema.js';
 
 /**
  * Registra un nuevo paquete
  */
+// Código de seguimiento: marca de tiempo + 32 bits aleatorios criptográficos (antes: Math.random, predecible)
+export const generateTrackingCode = () => `TRK-${Date.now()}-${randomBytes(4).toString('hex').toUpperCase()}`;
+
 export const createPackage = async (data, userId) => {
   const { 
     origen, destino, peso, description, route_id,
@@ -41,7 +45,7 @@ export const createPackage = async (data, userId) => {
         description,
         route_id: route_id || null,
         status: initialStatus,
-        tracking_code: `TRK-${Date.now()}-${Math.floor(Math.random() * 1000)}`
+        tracking_code: generateTrackingCode()
       }
     ])
     .select()
@@ -79,10 +83,10 @@ export const getPackages = async (filters = {}) => {
 /**
  * Crea una nueva ruta de transporte
  */
-export const createRoute = async (data) => {
+const createRouteSequential = async (data, db = supabase) => {
   const { checkpoints, ...routeData } = data;
 
-  const { data: route, error } = await supabase
+  const { data: route, error } = await db
     .from('transport_routes')
     .insert([
       {
@@ -102,7 +106,7 @@ export const createRoute = async (data) => {
       route_id: route.id
     }));
 
-    const { error: cpError } = await supabase
+    const { error: cpError } = await db
       .from('route_checkpoints')
       .insert(checkpointsToInsert);
 
@@ -219,11 +223,11 @@ export const getRoute = async (routeId) => {
 /**
  * Actualiza una ruta de transporte y sus checkpoints
  */
-export const updateRoute = async (id, data) => {
+const updateRouteSequential = async (id, data, db = supabase) => {
   const { checkpoints, ...routeData } = data;
 
   // 1. Actualizar datos básicos de la ruta
-  const { data: updated, error } = await supabase
+  const { data: updated, error } = await db
     .from('transport_routes')
     .update({
       ...routeData,
@@ -239,7 +243,7 @@ export const updateRoute = async (id, data) => {
   // Nota: Esto es más simple que hacer un diff, dado que son pocos puntos.
   if (checkpoints) {
     // Primero eliminamos los viejos
-    await supabase
+    await db
       .from('route_checkpoints')
       .delete()
       .eq('route_id', id);
@@ -251,7 +255,7 @@ export const updateRoute = async (id, data) => {
         route_id: id
       }));
 
-      const { error: cpError } = await supabase
+      const { error: cpError } = await db
         .from('route_checkpoints')
         .insert(checkpointsToInsert);
 
@@ -267,9 +271,9 @@ export const updateRoute = async (id, data) => {
 /**
  * Elimina una ruta de transporte
  */
-export const deleteRoute = async (id) => {
+const deleteRouteSequential = async (id, db = supabase) => {
   // 1. Obtener IDs de viajes asociados a esta ruta
-  const { data: trips } = await supabase
+  const { data: trips } = await db
     .from('driver_trips')
     .select('id')
     .eq('route_id', id);
@@ -277,33 +281,33 @@ export const deleteRoute = async (id) => {
   const tripIds = trips?.map(t => t.id) || [];
 
   // 2. Desasignar paquetes (volver a PENDING)
-  await supabase
+  await db
     .from('packages')
     .update({ route_id: null, status: PACKAGE_STATUS.PENDING })
     .eq('route_id', id);
 
   // 3. Limpiar tracking_logs para romper la cadena de FK
   if (tripIds.length > 0) {
-    await supabase
+    await db
       .from('tracking_logs')
       .update({ trip_id: null })
       .in('trip_id', tripIds);
   }
 
   // 4. Eliminar sesiones de viaje (driver_trips)
-  await supabase
+  await db
     .from('driver_trips')
     .delete()
     .eq('route_id', id);
 
   // 5. Eliminar checkpoints
-  await supabase
+  await db
     .from('route_checkpoints')
     .delete()
     .eq('route_id', id);
 
   // 6. Eliminar la ruta
-  const { error } = await supabase
+  const { error } = await db
     .from('transport_routes')
     .delete()
     .eq('id', id);
@@ -354,4 +358,54 @@ export const deliverPackage = async (packageId) => {
   eventBus.emit('tracking:package_delivered', { packageId });
 
   return updated;
+};
+
+// ---------------------------------------------------------------------------------------------------------
+// Operaciones atómicas sobre rutas (migrations/019_route_atomic_operations.sql)
+//
+// Crear, editar y borrar una ruta toca varias tablas. Se ejecutan como funciones SQL (RPC) dentro de una
+// transacción: o se aplica todo o no se aplica nada. Si las funciones aún no están instaladas en la base,
+// se usa el flujo secuencial anterior (sin transacción) y se avisa en el log.
+// ---------------------------------------------------------------------------------------------------------
+const isMissingFunction = (error) =>
+  ['PGRST202', '42883'].includes(error?.code) || /could not find the function/i.test(error?.message || '');
+
+let warnedNoAtomic = false;
+const warnNoAtomic = () => {
+  if (warnedNoAtomic) return;
+  warnedNoAtomic = true;
+  console.warn('[Logistics] Funciones atómicas de rutas no instaladas (migrations/019_route_atomic_operations.sql): se usa el flujo secuencial, sin transacción.');
+};
+
+export const createRoute = async (data, db = supabase) => {
+  const { checkpoints, ...routeData } = data;
+  const { data: route, error } = await db.rpc('create_route_with_checkpoints', {
+    p_route: { ...routeData, status: ROUTE_STATUS.PLANNED },
+    p_checkpoints: checkpoints || [],
+  });
+  if (!error) return route;
+  if (!isMissingFunction(error)) throw error;
+  warnNoAtomic();
+  return createRouteSequential(data, db);
+};
+
+export const updateRoute = async (id, data, db = supabase) => {
+  const { checkpoints, ...routeData } = data;
+  const { data: route, error } = await db.rpc('update_route_with_checkpoints', {
+    p_id: id,
+    p_route: routeData,
+    p_checkpoints: checkpoints ?? null, // null = no tocar los checkpoints
+  });
+  if (!error) return route;
+  if (!isMissingFunction(error)) throw error;
+  warnNoAtomic();
+  return updateRouteSequential(id, data, db);
+};
+
+export const deleteRoute = async (id, db = supabase) => {
+  const { error } = await db.rpc('delete_route_cascade', { p_id: id });
+  if (!error) return true;
+  if (!isMissingFunction(error)) throw error;
+  warnNoAtomic();
+  return deleteRouteSequential(id, db);
 };

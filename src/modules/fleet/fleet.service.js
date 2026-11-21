@@ -71,11 +71,18 @@ export const getActiveDriver = async (driverId) => {
  * Obtiene todos los usuarios registrados con el rol 'client'
  */
 export const getClients = async () => {
-  const { data, error } = await supabase.auth.admin.listUsers();
-  if (error) throw error;
+  // listUsers devuelve una página (50 por defecto): se recorren todas para no truncar la lista
+  const users = [];
+  const PER_PAGE = 1000;
+  for (let page = 1; ; page += 1) {
+    const { data, error } = await supabase.auth.admin.listUsers({ page, perPage: PER_PAGE });
+    if (error) throw error;
+    users.push(...data.users);
+    if (data.users.length < PER_PAGE) break;
+  }
 
-  return data.users
-    .filter(u => u.user_metadata?.role === 'client')
+  return users
+    .filter(u => (u.app_metadata?.role || u.user_metadata?.role) === 'client')
     .map(u => ({
       id: u.id,
       email: u.email,

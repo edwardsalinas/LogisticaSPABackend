@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import * as AiAgentController from './ai-agent.controller.js';
 import { requireAuth } from '../iam/iam.middleware.js';
+import { chatLimiter } from '../../shared/middlewares/rateLimit.js';
 
 const router = Router();
 router.use(requireAuth);
@@ -21,9 +22,18 @@ router.use(requireAuth);
  *             type: object
  *             required: [message]
  *             properties:
- *               message: { type: string, description: "La consulta o pregunta del usuario" }
+ *               message: { type: string, maxLength: 1000, description: "La consulta o pregunta del usuario" }
+ *               history:
+ *                 type: array
+ *                 maxItems: 10
+ *                 description: "Mensajes previos de la conversación (contexto)"
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     role: { type: string, enum: [user, assistant] }
+ *                     content: { type: string }
  *     responses:
- *       201:
+ *       200:
  *         description: Respuesta del asistente generada
  *         content:
  *           application/json:
@@ -31,8 +41,12 @@ router.use(requireAuth);
  *               type: object
  *               properties:
  *                 success: { type: boolean }
- *                 data: { type: string }
+ *                 response: { type: string }
+ *       400:
+ *         description: Mensaje inválido
+ *       429:
+ *         description: Demasiados mensajes
  */
-router.post('/chat', AiAgentController.handleChat);
+router.post('/chat', chatLimiter, AiAgentController.handleChat);
 
 export default router;

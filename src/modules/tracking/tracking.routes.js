@@ -1,7 +1,9 @@
 import { Router } from 'express';
-import { logTrackingEvent, getTrackingLogs, handleGetMapData, handleLogTripEvent, handleGetRouteTracking, handleGetPublicTracking } from './tracking.controller.js';
+import { logTrackingEvent, getTrackingLogs, handleGetMapData, handleLogTripEvent, handleLogTripEventsBatch, handleGetRouteTracking, handleGetPublicTracking } from './tracking.controller.js';
 import { handleStartTrip, handleStopTrip, handleGetActiveTrip } from './trips.controller.js';
 import { requireAuth, requireRole } from '../iam/iam.middleware.js';
+import { publicTrackingLimiter } from '../../shared/middlewares/rateLimit.js';
+import { requireCaptcha } from '../../shared/middlewares/captcha.js';
 
 const router = Router();
 
@@ -33,7 +35,7 @@ const router = Router();
  *       201:
  *         description: Evento registrado
  */
-router.post('/', requireAuth, logTrackingEvent);
+router.post('/', requireAuth, requireRole(['admin', 'logistics_operator', 'driver']), logTrackingEvent);
 router.post('/events', requireAuth, requireRole(['admin', 'driver']), logTrackingEvent);
 
 /**
@@ -132,11 +134,79 @@ router.get('/trip/active', requireAuth, requireRole(['driver']), handleGetActive
  * /api/tracking/trip/{tripId}/event:
  *   post:
  *     summary: Registrar evento de GPS para un viaje activo
+ *     description: >
+ *       Acepta un `timestamp` ISO 8601 opcional con el instante real de la lectura GPS
+ *       (útil cuando el punto estuvo en la cola offline del dispositivo).
  *     tags: [Tracking]
  *     security:
  *       - bearerAuth: []
+ *       - cookieAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: tripId
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               lat: { type: number }
+ *               lng: { type: number }
+ *               status: { type: string }
+ *               timestamp: { type: string, format: date-time }
+ *     responses:
+ *       201:
+ *         description: Evento registrado
  */
 router.post('/trip/:tripId/event', requireAuth, requireRole(['driver']), handleLogTripEvent);
+
+/**
+ * @swagger
+ * /api/tracking/trip/{tripId}/events/batch:
+ *   post:
+ *     summary: Registrar varios puntos GPS acumulados offline (hasta 200)
+ *     description: >
+ *       Los puntos se procesan en orden cronológico. Si ocurre un error, la respuesta incluye
+ *       `processed` con la cantidad de puntos ya registrados para que el cliente pueda reintentar
+ *       solo el resto.
+ *     tags: [Tracking]
+ *     security:
+ *       - bearerAuth: []
+ *       - cookieAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: tripId
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [points]
+ *             properties:
+ *               points:
+ *                 type: array
+ *                 maxItems: 200
+ *                 items:
+ *                   type: object
+ *                   required: [lat, lng, timestamp]
+ *                   properties:
+ *                     lat: { type: number }
+ *                     lng: { type: number }
+ *                     status: { type: string }
+ *                     timestamp: { type: string, format: date-time }
+ *     responses:
+ *       201:
+ *         description: Puntos registrados
+ *       400:
+ *         description: Payload inválido
+ */
+router.post('/trip/:tripId/events/batch', requireAuth, requireRole(['driver']), handleLogTripEventsBatch);
 /**
  * @swagger
  * /api/tracking/route/{routeId}:
@@ -151,7 +221,7 @@ router.post('/trip/:tripId/event', requireAuth, requireRole(['driver']), handleL
  *         required: true
  *         schema: { type: string, format: uuid }
  */
-router.get('/route/:routeId', requireAuth, handleGetRouteTracking);
+router.get('/route/:routeId', requireAuth, requireRole(['admin', 'logistics_operator', 'driver']), handleGetRouteTracking);
 
 /**
  * @swagger
@@ -170,6 +240,6 @@ router.get('/route/:routeId', requireAuth, handleGetRouteTracking);
  *       404:
  *         description: Código no encontrado
  */
-router.get('/public/:code', handleGetPublicTracking);
+router.get('/public/:code', publicTrackingLimiter, requireCaptcha, handleGetPublicTracking);
 
 export default router;

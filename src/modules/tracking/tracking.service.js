@@ -75,7 +75,7 @@ export const getMapData = async (packageId) => {
         .from('route_checkpoints')
         .select('*')
         .eq('route_id', pkg.route_id)
-        .order('order_index', { ascending: true });
+        .order('sequence_order', { ascending: true });
 
       if (!cpError) {
         checkpoints = cpData;
@@ -160,6 +160,19 @@ export const getRouteTracking = async (routeId) => {
 /**
  * Obtiene información de rastreo pública filtrando datos sensibles
  */
+/**
+ * Enmascara un nombre para el rastreo público: "Juan Pérez" -> "J*** P****".
+ * El código de seguimiento no es un secreto fuerte, así que no se expone el nombre completo.
+ */
+export const maskName = (name) => {
+  if (!name || typeof name !== 'string') return name;
+  return name
+    .trim()
+    .split(/\s+/)
+    .map((w) => (w.length <= 1 ? w : w[0] + '*'.repeat(Math.min(w.length - 1, 5))))
+    .join(' ');
+};
+
 export const getPublicTrackingByCode = async (trackingCode) => {
   // 1. Buscar el paquete por código de rastreo
   const { data: pkg, error: pkgError } = await supabase
@@ -181,7 +194,11 @@ export const getPublicTrackingByCode = async (trackingCode) => {
   if (logsError) throw logsError;
 
   return {
-    package: pkg,
+    package: {
+      ...pkg,
+      sender_name: maskName(pkg.sender_name),
+      recipient_name: maskName(pkg.recipient_name),
+    },
     history: logs || []
   };
 };

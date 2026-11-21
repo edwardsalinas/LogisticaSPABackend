@@ -9,6 +9,7 @@ export const VEHICLE_STATUS = {
 
 export const vehicleSchema = z.object({
   plate: z.string().min(6, 'La placa debe tener al menos 6 caracteres').max(10, 'Placa demasiado larga'),
+  brand: z.string().optional(),
   model: z.string().min(2, 'El modelo es requerido'),
   type: z.string().min(2, 'El tipo de vehículo es requerido'),
   capacity_kg: z.number().positive('La capacidad debe ser positiva'),

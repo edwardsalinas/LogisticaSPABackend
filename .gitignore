@@ -26,3 +26,10 @@ yarn-error.log*
 # OS Files
 .DS_Store
 Thumbs.db
+
+# Credenciales locales (NUNCA subir)
+credenciales.local.txt
+*.local.txt
+
+# Supabase CLI (estado local del enlace con el proyecto)
+supabase/

@@ -25,12 +25,15 @@ async function runFullFlowTest() {
     
     if (!loginResponse.ok) throw new Error('Error de autenticación');
     const loginResult = await loginResponse.json();
-    const token = loginResult.data.session.access_token;
+    // La sesión ahora viaja en cookies httpOnly (sb_access / sb_refresh), no en el cuerpo.
+    // Si TURNSTILE_SECRET_KEY está activa en el servidor, el login requiere el header x-captcha-token.
+    const cookieHeader = loginResponse.headers.getSetCookie().map((c) => c.split(';')[0]).join('; ');
     console.log('✅ Autenticación exitosa');
 
     const authHeaders = {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${token}`
+      'Cookie': cookieHeader,
+      'X-Requested-With': 'XMLHttpRequest'
     };
     // 1. Crear un paquete (Logistics)
     console.log('\n📦 1. Creando paquete...');

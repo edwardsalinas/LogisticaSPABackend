@@ -24,6 +24,8 @@ async function seedUsers() {
         role: user.role,
         full_name: user.name,
       },
+      // El rol confiable vive en app_metadata (solo escribible por el servidor)
+      app_metadata: { role: user.role },
     });
 
     if (error) {
@@ -34,6 +36,7 @@ async function seedUsers() {
         if (existing) {
           await supabase.auth.admin.updateUserById(existing.id, {
             user_metadata: { role: user.role, full_name: user.name },
+            app_metadata: { role: user.role },
           });
           console.log(`🔄 ${user.email} — rol actualizado a "${user.role}"`);
         }

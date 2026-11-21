@@ -11,48 +11,39 @@ export const logTrackingEvent = async (req, res) => {
     
     const result = await TrackingService.logEvent(validatedData);
     
-    // === AGREGAR ESTO DESPUÉS DE CREAR EL TRACKING LOG ===
-    try {
-      // Obtener el paquete para saber su ruta
-      const { packagesService } = await import('../logistics/packages.service.js');
-      const pkg = await packagesService.getById(validatedData.package_id);
+    // Geofencing: si el paquete tiene ruta, verificar si el punto cae dentro de algún checkpoint
+    if (validatedData.package_id) {
+      try {
+        const pkg = await PackagesService.packagesService.getById(validatedData.package_id);
 
-      // Si tiene ruta, verificar geofencing
-      if (pkg.route_id) {
-        const { default: supabase } = await import('../../shared/config/supabase.js');
+        if (pkg.route_id) {
+          const { data } = await supabase.rpc('check_checkpoint_geofence', {
+            p_lat: validatedData.lat,
+            p_lng: validatedData.lng,
+            p_route_id: pkg.route_id,
+          });
 
-        const { data, error } = await supabase.rpc('check_checkpoint_geofence', {
-          p_lat: validatedData.lat,
-          p_lng: validatedData.lng,
-          p_route_id: pkg.route_id,
-        });
-
-        if (data && data.length > 0 && data[0].within_radius) {
-          // Registrar visita al checkpoint
-          await supabase
-            .from('checkpoint_visits')
-            .insert({
+          if (data && data.length > 0 && data[0].within_radius) {
+            await supabase.from('checkpoint_visits').insert({
               checkpoint_id: data[0].checkpoint_id,
               tracking_log_id: result.id,
               distance_meters: data[0].distance_meters,
               within_radius: true,
             });
 
-          // Publicar evento para notificaciones
-          const { default: eventBus } = await import('../../shared/utils/eventBus.js');
-          eventBus.publish('tracking:checkpoint_reached', {
-            package_id: validatedData.package_id,
-            checkpoint_id: data[0].checkpoint_id,
-            checkpoint_name: data[0].checkpoint_name,
-            distance: data[0].distance_meters,
-          });
+            eventBus.publish('tracking:checkpoint_reached', {
+              package_id: validatedData.package_id,
+              checkpoint_id: data[0].checkpoint_id,
+              checkpoint_name: data[0].checkpoint_name,
+              distance: data[0].distance_meters,
+            });
+          }
         }
+      } catch (geoError) {
+        // No se bloquea la respuesta principal si falla el geofencing
+        console.error('[Tracking Controller] Error en geofencing:', geoError);
       }
-    } catch (geoError) {
-      console.error('[Tracking Controller] Error en geofencing:', geoError);
-      // No bloqueamos la respuesta principal si falla el geofencing
     }
-    // === FIN DEL CÓDIGO A AGREGAR ===
 
     return res.status(201).json({
       success: true,
@@ -78,6 +69,7 @@ export const logTrackingEvent = async (req, res) => {
 export const getTrackingLogs = async (req, res) => {
   try {
     const { packageId } = req.params;
+    await assertPackageAccess(req.user, packageId);
     const logs = await TrackingService.getLogs(packageId);
 
     return res.status(200).json({
@@ -86,9 +78,9 @@ export const getTrackingLogs = async (req, res) => {
     });
   } catch (error) {
     console.error('[Tracking Controller] Error obteniendo logs:', error);
-    return res.status(500).json({
+    return res.status(error.status || 500).json({
       success: false,
-      message: 'Error al obtener el historial de tracking',
+      message: error.status ? error.message : 'Error al obtener el historial de tracking',
     });
   }
 };
@@ -96,6 +88,7 @@ export const getTrackingLogs = async (req, res) => {
 export const handleGetMapData = async (req, res) => {
   try {
     const { packageId } = req.params;
+    await assertPackageAccess(req.user, packageId);
     const mapData = await TrackingService.getMapData(packageId);
 
     return res.status(200).json({
@@ -104,9 +97,9 @@ export const handleGetMapData = async (req, res) => {
     });
   } catch (error) {
     console.error('[Tracking Controller] Error obteniendo datos del mapa:', error);
-    return res.status(500).json({
+    return res.status(error.status || 500).json({
       success: false,
-      message: 'Error al obtener los datos del mapa de tracking',
+      message: error.status ? error.message : 'Error al obtener los datos del mapa de tracking',
     });
   }
 };
@@ -125,21 +118,68 @@ const calculateDistance = (lat1, lon1, lat2, lon2) => {
   return R * c; // Distancia en metros
 };
 
-export const handleLogTripEvent = async (req, res) => {
-  try {
-    const { tripId } = req.params;
-    const { lat, lng, status } = req.body;
-    
-    // 1. Obtención paralela de viaje, paquetes y checkpoints de ruta
-    const [tripResponse, packagesResponse, checkpointsResponse, visitsResponse] = await Promise.all([
-      supabase.from('driver_trips').select('*, transport_routes(*)').eq('id', tripId).single(),
-      supabase.from('packages').select('id').eq('route_id', (await supabase.from('driver_trips').select('route_id').eq('id', tripId).maybeSingle()).data?.route_id).neq('status', 'entregado'),
-      supabase.from('route_checkpoints').select('*').eq('route_id', (await supabase.from('driver_trips').select('route_id').eq('id', tripId).maybeSingle()).data?.route_id).order('sequence_order', { ascending: true }),
+const httpError = (status, message) => {
+  const err = new Error(message);
+  err.status = status;
+  return err;
+};
+
+/**
+ * Control de propiedad: un cliente solo puede consultar el seguimiento de SUS paquetes.
+ * Admin, operador y conductor tienen acceso operativo.
+ */
+export const assertPackageAccess = async (user, packageId, db = supabase) => {
+  if (!user || user.role !== 'client') return;
+  const { data, error } = await db.from('packages').select('sender_id').eq('id', packageId).maybeSingle();
+  if (error || !data) throw httpError(404, 'Paquete no encontrado');
+  if (data.sender_id !== user.id) throw httpError(403, 'No tienes acceso a este paquete');
+};
+
+// Registra la visita a un checkpoint. Si la tabla aún no tiene la columna trip_id (migrations/017),
+// se registra sin ella para no perder la visita.
+const insertCheckpointVisit = async (row) => {
+  const result = await supabase.from('checkpoint_visits').insert(row);
+  if (result.error && /trip_id/i.test(result.error.message || '')) {
+    console.warn('[Tracking] checkpoint_visits sin columna trip_id: aplica migrations/017_checkpoint_visits_trip_id.sql');
+    const { trip_id, ...legacy } = row;
+    return supabase.from('checkpoint_visits').insert(legacy);
+  }
+  return result;
+};
+
+/**
+ * Resuelve el instante real de una lectura GPS. Si el cliente la acumuló offline envía su propio
+ * timestamp; se descartan valores inválidos y se limita a "ahora" para evitar fechas futuras.
+ */
+export const resolveTimestamp = (value) => {
+  if (!value) return new Date().toISOString();
+  const t = new Date(value).getTime();
+  if (Number.isNaN(t)) throw httpError(400, 'timestamp inválido (usa formato ISO 8601)');
+  return new Date(Math.min(t, Date.now())).toISOString();
+};
+
+/**
+ * Procesa un punto GPS de un viaje: detecta partida, checkpoints y llegada al destino,
+ * persiste los logs y dispara los eventos de dominio.
+ * Es reutilizado por el endpoint individual y por el endpoint por lotes (cola offline).
+ */
+const processTripEvent = async (tripId, { lat, lng, status, timestamp }, driverId) => {
+    const eventTime = resolveTimestamp(timestamp);
+
+    // 1. Viaje (con su ruta); luego paquetes, checkpoints y visitas en paralelo
+    const tripResponse = await supabase.from('driver_trips').select('*, transport_routes(*)').eq('id', tripId).single();
+    const trip = tripResponse.data;
+    if (!trip) throw httpError(404, 'Viaje no encontrado');
+    if (driverId && trip.driver_id && trip.driver_id !== driverId) {
+      throw httpError(403, 'El viaje no pertenece al conductor autenticado');
+    }
+
+    const [packagesResponse, checkpointsResponse, visitsResponse] = await Promise.all([
+      supabase.from('packages').select('id').eq('route_id', trip.route_id).neq('status', 'entregado'),
+      supabase.from('route_checkpoints').select('*').eq('route_id', trip.route_id).order('sequence_order', { ascending: true }),
       supabase.from('checkpoint_visits').select('checkpoint_id').eq('trip_id', tripId)
     ]);
 
-    const trip = tripResponse.data;
-    if (!trip) throw new Error('Viaje no encontrado');
     
     // Permitimos seguir logueando incluso si el status es 'completed' por latencia,
     // pero enfocamos la lógica en viajes 'active'.
@@ -210,7 +250,7 @@ export const handleLogTripEvent = async (req, res) => {
     // 3. Persistencia PARALELA de logs y disparo de eventos
     const { data: mainLog, error: logError } = await supabase
       .from('tracking_logs')
-      .insert({ trip_id: tripId, lat, lng, status: finalStatus, timestamp: new Date().toISOString() })
+      .insert({ trip_id: tripId, lat, lng, status: finalStatus, timestamp: eventTime })
       .select().single();
 
     if (logError) throw logError;
@@ -220,14 +260,15 @@ export const handleLogTripEvent = async (req, res) => {
     // A. Duplicar logs para cada paquete
     if (routePackages.length > 0) {
       const packageLogs = routePackages.map(pkg => ({
-        package_id: pkg.id, trip_id: tripId, lat, lng, status: finalStatus, timestamp: new Date().toISOString()
+        package_id: pkg.id, trip_id: tripId, lat, lng, status: finalStatus, timestamp: eventTime
       }));
       parallelTasks.push(supabase.from('tracking_logs').insert(packageLogs));
     }
 
     // B. Si fue checkpoint, registrar visita y disparar evento
     if (detectedCheckpoint) {
-      parallelTasks.push(supabase.from('checkpoint_visits').insert({
+      parallelTasks.push(insertCheckpointVisit({
+        trip_id: tripId,
         checkpoint_id: detectedCheckpoint.checkpoint_id,
         tracking_log_id: mainLog.id,
         distance_meters: detectedCheckpoint.distance_meters,
@@ -283,10 +324,54 @@ export const handleLogTripEvent = async (req, res) => {
     // reactiva en el Logistics Service al escuchar 'tracking:package_delivered'
     // para evitar race-conditions en una sola petición.
 
+    return mainLog;
+};
+
+export const handleLogTripEvent = async (req, res) => {
+  try {
+    const { tripId } = req.params;
+    const { lat, lng, status, timestamp } = req.body;
+    const mainLog = await processTripEvent(tripId, { lat, lng, status, timestamp }, req.user?.id);
     return res.status(201).json({ success: true, data: mainLog });
   } catch (error) {
     console.error('[Tracking Controller] Error logueando evento de viaje:', error);
-    return res.status(500).json({ success: false, message: error.message });
+    return res.status(error.status || 500).json({ success: false, message: error.message });
+  }
+};
+
+const batchSchema = z.object({
+  points: z.array(z.object({
+    lat: z.number().min(-90).max(90),
+    lng: z.number().min(-180).max(180),
+    status: z.string().min(1).optional(),
+    timestamp: z.string().datetime({ offset: true }),
+  })).min(1).max(200),
+});
+
+/**
+ * Recibe los puntos GPS que el dispositivo acumuló sin conexión (cola offline).
+ * Se procesan en orden cronológico; ante un error se informa cuántos se registraron.
+ */
+export const handleLogTripEventsBatch = async (req, res) => {
+  const { tripId } = req.params;
+  let processed = 0;
+  try {
+    const { points } = batchSchema.parse(req.body);
+    const ordered = [...points].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+
+    let arrived = false; // algún punto del lote marcó la llegada al destino
+    for (const point of ordered) {
+      const log = await processTripEvent(tripId, point, req.user?.id);
+      processed += 1;
+      if (/lleg[óo] al destino/i.test(log?.status || '')) arrived = true;
+    }
+    return res.status(201).json({ success: true, processed, total: ordered.length, arrived });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ success: false, processed, errors: error.flatten().fieldErrors });
+    }
+    console.error('[Tracking Controller] Error en lote de eventos de viaje:', error);
+    return res.status(error.status || 500).json({ success: false, processed, message: error.message });
   }
 };
 

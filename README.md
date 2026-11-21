@@ -2,7 +2,7 @@
 
 ## Descripción
 
-API REST para la gestión logística de bienes (paquetería/encomiendas) y servicios (transporte/fletes), construida como un Monolito Modular en Node.js. Integra un Agente Conversacional de Inteligencia Artificial (LangChain.js + OpenAI) que permite consultar el estado de envíos y rutas en lenguaje natural. Soporta tracking GPS en tiempo real, trazabilidad inmutable y generación automática de rutas desde cronogramas.
+API REST para la gestión logística de bienes (paquetería/encomiendas) y servicios (transporte/fletes), construida como un Monolito Modular en Node.js. Integra un Agente Conversacional de Inteligencia Artificial (LangChain.js + Gemini) que permite consultar el estado de envíos y rutas en lenguaje natural. Soporta tracking GPS en tiempo real, trazabilidad inmutable y generación automática de rutas desde cronogramas.
 
 ## Objetivo general
 
@@ -25,7 +25,7 @@ API REST para la gestión logística de bienes (paquetería/encomiendas) y servi
 - Control de acceso basado en roles (RBAC): admin, driver, logistics_operator, client
 - CRUD completo de rutas, paquetes, vehículos, conductores y cronogramas
 - Sistema de tracking GPS con trips, pings y detección de checkpoints (geofencing Haversine)
-- Agente conversacional IA con LangChain.js (ReAct Agent + GPT-4o-mini)
+- Agente conversacional IA con LangChain.js (ReAct Agent + Gemini)
 - Estadísticas públicas y protegidas para dashboards
 - Documentación interactiva Swagger en `/api-docs`
 - Scheduler de tareas automáticas (proyección de rutas cada 24h)
@@ -43,7 +43,7 @@ API REST para la gestión logística de bienes (paquetería/encomiendas) y servi
 - **Base de datos**: PostgreSQL (Supabase)
 - **Autenticación**: Supabase Auth (JWT)
 - **Validación**: Zod
-- **IA**: LangChain.js + @langchain/openai + @langchain/langgraph
+- **IA**: LangChain.js + @langchain/openai (cliente compatible con Gemini, Qwen y OpenAI) + @langchain/langgraph
 - **Documentación**: swagger-jsdoc + swagger-ui-express
 - **Testing**: Vitest
 - **CI/CD**: GitHub Actions
@@ -62,7 +62,7 @@ Express Server (app.js)
     ├── /api/fleet      → Fleet Module      (vehicles, drivers, schedules)
     ├── /api/tracking   → Tracking Module   (GPS pings, trips, geofencing)
     ├── /api/statistics → Statistics Module (dashboard, public stats)
-    └── /api/ai-agent   → AI Agent Module   (LangChain ReAct → OpenAI)
+    └── /api/ai-agent   → AI Agent Module   (LangChain ReAct → Gemini)
                               │
                               ▼
                     Supabase (PostgreSQL + Auth + Realtime)
@@ -136,10 +136,85 @@ http://localhost:3000/api-docs
 PORT=3000
 SUPABASE_URL=https://xxxxx.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
-LLM_PROVIDER=openai
-LLM_MODEL_NAME=gpt-4o-mini
-OPENAI_API_KEY=sk-...
+# Modelo de IA (por defecto: Gemini, de Google, vía su endpoint compatible con OpenAI)
+LLM_PROVIDER=gemini
+GEMINI_API_KEY=...
+# LLM_MODEL_NAME=gemini-flash-lite-latest
 ```
+
+**Cómo obtener la clave de Gemini:** crea una API key en [Google AI Studio](https://aistudio.google.com/apikey) (inicia sesión con una cuenta de Google). La suscripción *Google AI Pro* de la app de Gemini es independiente de la API y **no** incluye cuota de API. Sin facturación se usa el nivel gratuito (con límites bajos de peticiones; Google puede usar esos datos para mejorar sus productos, por lo que no conviene enviar datos reales de clientes); para más cuota se activa la facturación en Google Cloud (pago por uso). Los modelos disponibles y sus límites cambian: consulta la lista vigente en AI Studio y fija `LLM_MODEL_NAME` si quieres un modelo concreto.
+
+Alternativas: `LLM_PROVIDER=qwen` con `LLM_API_KEY` (Alibaba Cloud) o un modelo local con `LLM_BASE_URL`.
+
+Para usar OpenAI: `LLM_PROVIDER=openai` y `OPENAI_API_KEY=sk-...`.
+
+La lista completa de variables (CORS, cookies, rate limiting, captcha, proxy) está documentada en `.env.example`.
+
+## Seguridad
+
+| Capa | Implementación |
+|---|---|
+| Identidad | **Supabase Auth** gestiona usuarios, contraseñas y emisión de JWT. El backend no almacena credenciales: solo valida el token (`requireAuth`) y aplica roles (`requireRole`). |
+| Sesión | El JWT viaja en cookies **httpOnly** (`sb_access`, `sb_refresh`), no accesibles desde JavaScript. Endpoints: `POST /api/iam/login`, `/refresh`, `/logout`. El header `Authorization: Bearer` sigue aceptándose para clientes de API (Postman, scripts). |
+| CSRF | Con sesión por cookie, las peticiones que modifican datos exigen el header `X-Requested-With: XMLHttpRequest`. |
+| CORS | Lista de orígenes permitidos (`CORS_ORIGIN`) con `credentials: true`. |
+| Rate limiting | `express-rate-limit` por IP: API general (600 / 15 min), login (10 fallidos / 15 min), rastreo público (20 / min) y chat IA (15 / min). Detrás de un proxy configurar `TRUST_PROXY`. |
+| Captcha | Cloudflare Turnstile en `POST /api/iam/login` y `GET /api/tracking/public/:code` (header `x-captcha-token`). Se activa definiendo `TURNSTILE_SECRET_KEY`. |
+| Roles | El rol se lee de `app_metadata.role` (solo escribible por el servidor). `user_metadata` lo puede editar el propio usuario, por lo que solo se admite como respaldo de transición (`AUTH_ALLOW_USER_METADATA_ROLE`). Migración: `node --env-file=.env scripts/migrate-roles-to-app-metadata.js` (usa `--dry-run` para simular) y luego `AUTH_ALLOW_USER_METADATA_ROLE=false`. |
+| Propiedad de los datos | Un cliente solo consulta el seguimiento de sus propios paquetes (REST y asistente de IA). El conductor solo opera sus viajes. |
+| Datos públicos | El rastreo público enmascara los nombres del remitente y del destinatario. |
+| Asistente de IA | Herramientas de solo lectura con control de acceso por rol, mensaje acotado a 1000 caracteres, historial limitado y tope de pasos del agente. |
+| Validación | Esquemas Zod en los endpoints de escritura principales. |
+
+> Contra DDoS volumétrico, el rate limiting de la aplicación no es suficiente: en producción se recomienda un CDN/WAF delante (por ejemplo Cloudflare).
+
+## Pruebas
+
+```bash
+npm test      # pruebas unitarias y de seguridad (node:test), sin red ni base de datos
+```
+
+Cubren cookies de sesión, resolución de roles, CSRF, captcha, rate limiting, CORS, control de acceso de las herramientas del agente de IA, marcas de tiempo del modo offline y estadísticas. Las funciones SQL de `migrations/018` y `019` se prueban contra un PostgreSQL real en memoria (PGlite): atomicidad, protección frente a inyección SQL y permisos. `tests/integration/full-flow.test.js` es un script manual que requiere el servidor y Supabase en ejecución. El CI (`.github/workflows/ci.yml`) ejecuta `npm test` en cada push.
+
+## Rutas: operaciones atómicas
+
+Crear, editar y eliminar una ruta toca varias tablas. La migración `019_route_atomic_operations.sql` define funciones SQL que las ejecutan en una sola transacción (todo o nada), y el backend las invoca con `supabase.rpc()`. Si las funciones aún no están instaladas, usa el flujo secuencial anterior y lo avisa en el log. Ver `migrations/README.md` para el orden de aplicación.
+
+## Tracking sin conexión (cola offline)
+
+El conductor puede perder señal durante el viaje. El frontend guarda cada lectura GPS en el dispositivo (IndexedDB) con su `timestamp` real y la envía luego en lote:
+
+- `POST /api/tracking/trip/:tripId/event` acepta un `timestamp` ISO 8601 opcional.
+- `POST /api/tracking/trip/:tripId/events/batch` recibe hasta 200 puntos, los procesa en orden cronológico y responde `{ processed, total, arrived }`. Si falla a mitad de lote, `processed` indica cuántos se registraron.
+- El viaje debe pertenecer al conductor autenticado.
+
+## Despliegue con Docker Compose
+
+`docker-compose.yml` levanta el **backend** (Node.js) y el **frontend** (nginx sirviendo la SPA y haciendo de proxy de `/api`, de modo que la cookie de sesión funciona sin CORS). La base de datos y la autenticación las provee Supabase Cloud.
+
+Requiere ambos repositorios clonados lado a lado:
+
+```
+RepositoriosSPA/
+  LogisticaSPABackend/     <- aquí está docker-compose.yml
+  LogisticaSPAFrontend/
+```
+
+```bash
+cp .env.example .env        # completar SUPABASE_*, LLM_API_KEY, TURNSTILE_* (opcional)
+docker compose up --build
+```
+
+| Servicio | URL |
+|---|---|
+| Frontend | http://localhost:8080 |
+| API (vía nginx) | http://localhost:8080/api |
+| Swagger | http://localhost:8080/api-docs |
+| Healthcheck del backend | `/health` |
+
+Si el puerto 8080 está ocupado: `FRONTEND_PORT=18080 docker compose up --build`.
+
+En producción con HTTPS: `COOKIE_SECURE=true` y `CORS_ORIGIN` con el dominio real. Si el frontend y la API están en sitios distintos, usar `COOKIE_SAMESITE=none`.
 
 ## Equipo y roles
 
