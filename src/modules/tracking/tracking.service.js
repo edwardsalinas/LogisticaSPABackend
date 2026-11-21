@@ -17,6 +17,9 @@ const EVENT_TO_PACKAGE_STATUS = {
   devuelto: PACKAGE_STATUS.RETURNED,
 };
 
+// Estados finales: un paquete entregado, devuelto o cancelado no admite nuevos estados
+const FINAL_STATUSES = [PACKAGE_STATUS.DELIVERED, PACKAGE_STATUS.RETURNED, PACKAGE_STATUS.CANCELLED];
+
 export const packageStatusFromEvent = (status) => EVENT_TO_PACKAGE_STATUS[normalizeStatus(status)] ?? null;
 
 /**
@@ -25,6 +28,13 @@ export const packageStatusFromEvent = (status) => EVENT_TO_PACKAGE_STATUS[normal
  */
 export const logEvent = async (data, user = null, db = supabase) => {
   const { package_id, lat, lng, status, observations } = data;
+
+  if (package_id) {
+    const { data: current } = await db.from('packages').select('status').eq('id', package_id).maybeSingle();
+    if (current && FINAL_STATUSES.includes(current.status)) {
+      throw Object.assign(new Error(`El paquete ya está ${current.status} y no admite nuevos estados`), { status: 409 });
+    }
+  }
 
   const { data: insertedData, error } = await db
     .from('tracking_logs')

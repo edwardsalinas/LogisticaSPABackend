@@ -61,7 +61,7 @@ Express Server (app.js)
     ├── /api/logistics  → Logistics Module  (routes, packages, checkpoints)
     ├── /api/fleet      → Fleet Module      (vehicles, drivers, schedules)
     ├── /api/tracking   → Tracking Module   (GPS pings, trips, geofencing)
-    ├── /api/statistics → Statistics Module (dashboard, public stats)
+    ├── /api/statistics → Statistics Module (dashboard, analytics, public stats)
     └── /api/ai-agent   → AI Agent Module   (LangChain ReAct → Gemini)
                               │
                               ▼

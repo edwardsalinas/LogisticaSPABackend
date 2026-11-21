@@ -417,7 +417,37 @@ const warnNoAtomic = () => {
   console.warn('[Logistics] Funciones atómicas de rutas no instaladas (migrations/019_route_atomic_operations.sql): se usa el flujo secuencial, sin transacción.');
 };
 
-export const createRoute = async (data, db = supabase) => {
+/**
+ * Completa distancia, duración y llegada estimada de una ruta a partir del tramo predefinido (predefined_routes)
+ * que coincide con su origen y destino. Sin tramo conocido (ruta dibujada en el mapa) no se inventa nada.
+ * Sin llegada estimada no se puede medir si una entrega fue "a tiempo" (página Analítica).
+ */
+export const withEstimates = async (data, db = supabase) => {
+  if (!data.origin || !data.destination || !data.departure_time) return data;
+  if (data.estimated_duration_minutes != null && data.estimated_arrival != null) return data;
+
+  const { data: tramo } = await db
+    .from('predefined_routes')
+    .select('estimated_km, estimated_minutes')
+    .eq('origin_city', data.origin)
+    .eq('destination_city', data.destination)
+    .limit(1)
+    .maybeSingle();
+
+  const minutes = Number(tramo?.estimated_minutes);
+  const departure = new Date(data.departure_time).getTime();
+  if (!Number.isFinite(minutes) || minutes <= 0 || !Number.isFinite(departure)) return data;
+
+  return {
+    ...data,
+    total_distance_km: data.total_distance_km ?? tramo.estimated_km ?? null,
+    estimated_duration_minutes: minutes,
+    estimated_arrival: new Date(departure + minutes * 60000).toISOString(),
+  };
+};
+
+export const createRoute = async (rawData, db = supabase) => {
+  const data = await withEstimates(rawData, db);
   const { checkpoints, ...routeData } = data;
   const { data: route, error } = await db.rpc('create_route_with_checkpoints', {
     p_route: { ...routeData, status: ROUTE_STATUS.PLANNED },
@@ -429,7 +459,8 @@ export const createRoute = async (data, db = supabase) => {
   return createRouteSequential(data, db);
 };
 
-export const updateRoute = async (id, data, db = supabase) => {
+export const updateRoute = async (id, rawData, db = supabase) => {
+  const data = await withEstimates(rawData, db);
   const { checkpoints, ...routeData } = data;
   const { data: route, error } = await db.rpc('update_route_with_checkpoints', {
     p_id: id,

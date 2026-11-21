@@ -82,7 +82,7 @@ test('RF02: un evento "siniestro" cambia el estado del paquete', async () => {
 // ------------------------------------------------------------------ RF03: cadena de custodia
 test('RF03: cada evento registra el usuario responsable', async () => {
   const captured = [];
-  const db = { from: () => ({ insert: (rows) => { captured.push(...rows); return { select: async () => ({ data: rows.map((r) => ({ id: 'x', ...r })), error: null }) }; }, update: () => ({ eq: async () => ({ error: null }) }) }) };
+  const db = { from: () => ({ select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) }), insert: (rows) => { captured.push(...rows); return { select: async () => ({ data: rows.map((r) => ({ id: 'x', ...r })), error: null }) }; }, update: () => ({ eq: async () => ({ error: null }) }) }) };
   await logEvent({ package_id: 'p1', lat: 1, lng: 2, status: 'En agencia', observations: 'Llegó a la agencia El Alto' }, { id: 'user-123' }, db);
   assert.equal(captured[0].recorded_by, 'user-123');
   assert.equal(captured[0].observations, 'Llegó a la agencia El Alto');
@@ -90,7 +90,7 @@ test('RF03: cada evento registra el usuario responsable', async () => {
 
 test('RF03: sin usuario asociado queda null (no se inventa un responsable)', async () => {
   const captured = [];
-  const db = { from: () => ({ insert: (rows) => { captured.push(...rows); return { select: async () => ({ data: [{ id: 'x' }], error: null }) }; } }) };
+  const db = { from: () => ({ select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) }), insert: (rows) => { captured.push(...rows); return { select: async () => ({ data: [{ id: 'x' }], error: null }) }; } }) };
   await logEvent({ package_id: 'p1', lat: 1, lng: 2, status: 'Pendiente' }, null, db);
   assert.equal(captured[0].recorded_by, null);
 });
@@ -159,4 +159,22 @@ test('HU02: el cuerpo de la entrega se valida (nota máx. 500, coordenadas váli
   assert.equal(deliverBodySchema.parse({ note: '  ok  ' }).note, 'ok');
   assert.throws(() => deliverBodySchema.parse({ note: 'x'.repeat(501) }));
   assert.throws(() => deliverBodySchema.parse({ lat: 200, lng: 0 }));
+});
+
+test('RF02: un paquete entregado, devuelto o cancelado NO admite nuevos estados (no retrocede)', async () => {
+  for (const status of ['entregado', 'devuelto', 'cancelado']) {
+    const db = fakeDb({ packages: [{ ...PKG, status }] });
+    await assert.rejects(
+      () => logEvent({ package_id: 'p1', lat: 1, lng: 2, status: 'En agencia' }, { id: 'u1' }, db),
+      (e) => e.status === 409
+    );
+    assert.equal(db.state.packages[0].status, status); // no cambió
+    assert.equal(db.state.logs.length, 0); // ni siquiera se registró el evento
+  }
+});
+
+test('RF02: un paquete en curso sí admite el nuevo estado', async () => {
+  const db = fakeDb({ packages: [{ ...PKG, status: 'en_transito' }] });
+  await logEvent({ package_id: 'p1', lat: 1, lng: 2, status: 'En agencia' }, { id: 'u1' }, db);
+  assert.equal(db.state.packages[0].status, 'en_agencia');
 });

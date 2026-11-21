@@ -58,6 +58,10 @@ export const logTrackingEvent = async (req, res) => {
       });
     }
     
+    if (error.status === 409) {
+      return res.status(409).json({ success: false, message: error.message });
+    }
+
     console.error('[Tracking Controller] Error logueando evento:', error);
     return res.status(500).json({
       success: false,
