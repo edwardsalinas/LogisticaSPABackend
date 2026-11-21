@@ -6,11 +6,13 @@ import supabase from '../../shared/config/supabase.js';
  * Herramientas (tools) del agente. Son de SOLO LECTURA y se construyen por petición, con el usuario
  * autenticado, para aplicar el mismo control de acceso que la API REST:
  *   - cliente: solo sus propios paquetes; no consulta rutas ni listados operativos.
- *   - conductor: paquetes y solo las rutas que tiene asignadas.
+ *   - conductor: paquetes por código y solo las rutas que tiene asignadas (no busca por nombre de personas).
  *   - admin / operador logístico: acceso operativo completo.
  */
 const MAX_LOGS = 15;
 const MAX_ROUTES = 10;
+const MAX_PEOPLE_RESULTS = 5;
+const MIN_NAME_LENGTH = 3;
 const OPERATIONS_ROLES = ['admin', 'logistics_operator'];
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -18,6 +20,11 @@ export const canAccessPackage = (user, pkg) => user.role !== 'client' || pkg.sen
 
 export const canAccessRoute = (user, route) =>
   OPERATIONS_ROLES.includes(user.role) || (user.role === 'driver' && route.driver_id === user.id);
+
+// Deja solo letras, números, espacios, guion y apóstrofe: el nombre se inserta en un filtro de PostgREST
+// (.or/.ilike), donde comas, paréntesis, puntos y comodines (% _) permitirían alterar la consulta.
+export const sanitizeName = (name) =>
+  String(name ?? '').normalize('NFC').replace(/[^\p{L}\p{N} '-]/gu, ' ').replace(/\s+/g, ' ').trim();
 
 const DENIED = 'No tienes permiso para consultar esa información.';
 const asText = (value) => JSON.stringify(value);
@@ -118,5 +125,39 @@ export const buildTools = (user, db = supabase) => {
     }
   );
 
-  return [getPackageTracking, getRouteInfo, listRoutes];
+  const findPackagesByPerson = tool(
+    async ({ name }) => {
+      try {
+        if (user.role === 'driver') return DENIED;
+        const safe = sanitizeName(name);
+        if (safe.length < MIN_NAME_LENGTH) return `Indica al menos ${MIN_NAME_LENGTH} letras del nombre de la persona.`;
+
+        let query = db
+          .from('packages')
+          .select('tracking_code, status, origen, destino, recipient_name, sender_name, created_at')
+          .or(`recipient_name.ilike.%${safe}%,sender_name.ilike.%${safe}%`)
+          .order('created_at', { ascending: false })
+          .limit(MAX_PEOPLE_RESULTS);
+        // Un cliente solo encuentra paquetes que él mismo envió (filtro en la consulta, no después)
+        if (user.role === 'client') query = query.eq('sender_id', user.id);
+
+        const { data, error } = await query;
+        if (error) throw error;
+        if (!data || data.length === 0) return 'No se encontró ningún paquete asociado a ese nombre.';
+        return asText({ matches: data, note: data.length === MAX_PEOPLE_RESULTS ? 'Se muestran los más recientes; pide más datos si no es el correcto.' : undefined });
+      } catch (e) {
+        return `No se pudo buscar por nombre: ${e.message}`;
+      }
+    },
+    {
+      name: 'find_packages_by_person',
+      description:
+        'Busca paquetes por el nombre del destinatario o del remitente cuando el usuario no conoce el código de rastreo (ej. "mi caja a nombre de Juan Pérez"). Devuelve hasta 5 coincidencias con su código y estado. Si hay varias, pide al usuario que confirme cuál es.',
+      schema: z.object({
+        name: z.string().describe('Nombre o apellido de la persona (mínimo 3 letras)'),
+      }),
+    }
+  );
+
+  return [getPackageTracking, findPackagesByPerson, getRouteInfo, listRoutes];
 };
