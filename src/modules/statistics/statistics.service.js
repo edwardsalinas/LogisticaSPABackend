@@ -74,6 +74,8 @@ export const statisticsService = {
       pending,
       delivered,
       totalPackages,
+      incidents,
+      atAgency,
     ] = await Promise.all([
       count(countTable('vehicles')),
       count(countTable('drivers')),
@@ -84,6 +86,8 @@ export const statisticsService = {
       count(countPackages(PACKAGE_STATUS.PENDING)),
       count(countPackages(PACKAGE_STATUS.DELIVERED)),
       count(countPackages()),
+      count(countPackages(PACKAGE_STATUS.INCIDENT)),
+      count(countPackages(PACKAGE_STATUS.AT_AGENCY)),
     ]);
 
     // Distancia acumulada de las rutas completadas (Haversine entre origen y destino)
@@ -124,6 +128,8 @@ export const statisticsService = {
       packagesInTransit: inTransit,
       packagesPending: pending,
       packagesDelayed: delayed,
+      packagesIncident: incidents,
+      packagesAtAgency: atAgency,
     };
   },
 };

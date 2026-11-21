@@ -1,10 +1,32 @@
 import supabase from '../../shared/config/supabase.js';
 import eventBus from '../../shared/utils/eventBus.js';
+import { PACKAGE_STATUS } from '../logistics/logistics.schema.js';
 
-export const logEvent = async (data) => {
-  const { package_id, lat, lng, status } = data;
+const normalizeStatus = (s) =>
+  String(s ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim().replace(/\s+/g, '_');
 
-  const { data: insertedData, error } = await supabase
+// Estados de un evento manual que también actualizan el estado del paquete (RF02).
+// 'entregado' se resuelve por el evento tracking:package_delivered.
+const EVENT_TO_PACKAGE_STATUS = {
+  en_transito: PACKAGE_STATUS.IN_TRANSIT,
+  in_transit: PACKAGE_STATUS.IN_TRANSIT,
+  en_agencia: PACKAGE_STATUS.AT_AGENCY,
+  at_agency: PACKAGE_STATUS.AT_AGENCY,
+  siniestro: PACKAGE_STATUS.INCIDENT,
+  incident: PACKAGE_STATUS.INCIDENT,
+  devuelto: PACKAGE_STATUS.RETURNED,
+};
+
+export const packageStatusFromEvent = (status) => EVENT_TO_PACKAGE_STATUS[normalizeStatus(status)] ?? null;
+
+/**
+ * Registra un evento de seguimiento. `user` es el responsable del registro (cadena de custodia, RF03):
+ * su id queda guardado en tracking_logs.recorded_by.
+ */
+export const logEvent = async (data, user = null, db = supabase) => {
+  const { package_id, lat, lng, status, observations } = data;
+
+  const { data: insertedData, error } = await db
     .from('tracking_logs')
     .insert([
       {
@@ -12,6 +34,8 @@ export const logEvent = async (data) => {
         lat,
         lng,
         status,
+        observations: observations ?? null,
+        recorded_by: user?.id ?? null,
         timestamp: new Date().toISOString()
       }
     ])
@@ -19,6 +43,12 @@ export const logEvent = async (data) => {
 
   if (error) {
     throw error;
+  }
+
+  const newPackageStatus = packageStatusFromEvent(status);
+  if (package_id && newPackageStatus) {
+    const { error: updateError } = await db.from('packages').update({ status: newPackageStatus }).eq('id', package_id);
+    if (updateError) console.error('[Tracking] No se pudo actualizar el estado del paquete:', updateError.message);
   }
 
   if (status.toLowerCase() === 'delivered' || status.toLowerCase() === 'entregado') {

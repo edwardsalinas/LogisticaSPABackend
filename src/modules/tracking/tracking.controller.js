@@ -9,7 +9,7 @@ export const logTrackingEvent = async (req, res) => {
   try {
     const validatedData = trackingEventSchema.parse(req.body);
     
-    const result = await TrackingService.logEvent(validatedData);
+    const result = await TrackingService.logEvent(validatedData, req.user);
     
     // Geofencing: si el paquete tiene ruta, verificar si el punto cae dentro de algún checkpoint
     if (validatedData.package_id) {
@@ -250,7 +250,7 @@ const processTripEvent = async (tripId, { lat, lng, status, timestamp }, driverI
     // 3. Persistencia PARALELA de logs y disparo de eventos
     const { data: mainLog, error: logError } = await supabase
       .from('tracking_logs')
-      .insert({ trip_id: tripId, lat, lng, status: finalStatus, timestamp: eventTime })
+      .insert({ trip_id: tripId, lat, lng, status: finalStatus, timestamp: eventTime, recorded_by: driverId ?? null })
       .select().single();
 
     if (logError) throw logError;
@@ -260,7 +260,7 @@ const processTripEvent = async (tripId, { lat, lng, status, timestamp }, driverI
     // A. Duplicar logs para cada paquete
     if (routePackages.length > 0) {
       const packageLogs = routePackages.map(pkg => ({
-        package_id: pkg.id, trip_id: tripId, lat, lng, status: finalStatus, timestamp: eventTime
+        package_id: pkg.id, trip_id: tripId, lat, lng, status: finalStatus, timestamp: eventTime, recorded_by: driverId ?? null
       }));
       parallelTasks.push(supabase.from('tracking_logs').insert(packageLogs));
     }

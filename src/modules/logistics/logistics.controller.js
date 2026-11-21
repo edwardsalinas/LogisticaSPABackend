@@ -117,12 +117,25 @@ export const handleGetRoute = async (req, res) => {
     return res.status(500).json({ success: false, message: error.message });
   }
 };
+export const deliverBodySchema = z.object({
+  note: z.string().trim().max(500).optional(),
+  lat: z.number().min(-90).max(90).optional(),
+  lng: z.number().min(-180).max(180).optional(),
+});
+
 export const handleDeliverPackage = async (req, res) => {
   try {
     const { id } = req.params;
-    const result = await LogisticsService.deliverPackage(id);
+    const body = deliverBodySchema.parse(req.body ?? {});
+    const result = await LogisticsService.deliverPackage(id, { user: req.user, ...body });
     return res.status(200).json({ success: true, data: result });
   } catch (error) {
-    return res.status(500).json({ success: false, message: error.message });
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ success: false, errors: error.flatten().fieldErrors });
+    }
+    return res.status(error.status || 500).json({
+      success: false,
+      message: error.status ? error.message : 'Error al registrar la entrega',
+    });
   }
 };

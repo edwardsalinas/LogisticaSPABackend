@@ -332,8 +332,15 @@ export const getPredefinedRoutes = async () => {
 /**
  * Marca un paquete como entregado
  */
-export const deliverPackage = async (packageId) => {
-  const { data: pkg, error: fetchError } = await supabase
+const httpError = (status, message) => Object.assign(new Error(message), { status });
+
+/**
+ * Confirma la entrega de un paquete (HU02).
+ * - Un conductor solo puede entregar paquetes de SUS rutas (admin y operador, cualquiera).
+ * - Deja constancia en el historial (tracking_logs) con el responsable y la nota opcional (RF03).
+ */
+export const deliverPackage = async (packageId, { user = null, note = null, lat = null, lng = null } = {}, db = supabase) => {
+  const { data: pkg, error: fetchError } = await db
     .from('packages')
     .select('id, status, route_id')
     .eq('id', packageId)
@@ -341,18 +348,51 @@ export const deliverPackage = async (packageId) => {
 
   if (fetchError) throw fetchError;
   if (pkg.status === PACKAGE_STATUS.DELIVERED) return pkg;
+  if ([PACKAGE_STATUS.CANCELLED, PACKAGE_STATUS.RETURNED].includes(pkg.status)) {
+    throw httpError(409, 'El paquete está cancelado o devuelto y no puede entregarse');
+  }
 
-  const { data: updated, error } = await supabase
+  let route = null;
+  if (pkg.route_id) {
+    const { data } = await db.from('transport_routes').select('driver_id, dest_lat, dest_lng').eq('id', pkg.route_id).maybeSingle();
+    route = data;
+  }
+
+  if (user?.role === 'driver' && (!route || route.driver_id !== user.id)) {
+    throw httpError(403, 'Este paquete no pertenece a una de tus rutas');
+  }
+
+  // Ubicación de la entrega: la reportada, o el destino de la ruta; tracking_logs exige coordenadas.
+  const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
+  const position = isNum(lat) && isNum(lng)
+    ? { lat, lng }
+    : isNum(route?.dest_lat) && isNum(route?.dest_lng) ? { lat: route.dest_lat, lng: route.dest_lng } : { lat: 0, lng: 0 };
+
+  const deliveredAt = new Date().toISOString();
+  const { data: updated, error } = await db
     .from('packages')
-    .update({ 
-      status: PACKAGE_STATUS.DELIVERED,
-      delivered_at: new Date().toISOString()
-    })
+    .update({ status: PACKAGE_STATUS.DELIVERED, delivered_at: deliveredAt })
     .eq('id', packageId)
     .select()
     .single();
 
   if (error) throw error;
+
+  const { error: logError } = await db.from('tracking_logs').insert({
+    package_id: packageId,
+    lat: position.lat,
+    lng: position.lng,
+    status: 'Entregado',
+    observations: note || null,
+    recorded_by: user?.id ?? null,
+    timestamp: deliveredAt,
+  });
+
+  if (logError) {
+    // Sin constancia en el historial no se considera entregado: se revierte el estado
+    await db.from('packages').update({ status: pkg.status, delivered_at: null }).eq('id', packageId);
+    throw logError;
+  }
 
   // Emitir evento para automatizaciones (como cerrar la ruta si es el último paquete)
   eventBus.emit('tracking:package_delivered', { packageId });

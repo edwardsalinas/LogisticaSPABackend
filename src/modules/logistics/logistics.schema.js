@@ -4,7 +4,10 @@ export const PACKAGE_STATUS = {
   PENDING: 'pendiente',
   ASSIGNED: 'asignado',
   IN_TRANSIT: 'en_transito',
+  AT_AGENCY: 'en_agencia',
   DELIVERED: 'entregado',
+  INCIDENT: 'siniestro',
+  RETURNED: 'devuelto',
   CANCELLED: 'cancelado',
 };
 
