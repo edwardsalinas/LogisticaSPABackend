@@ -27,8 +27,8 @@ export const chatSchema = z.object({
 export const handleChat = async (req, res) => {
   try {
     const { message, history } = chatSchema.parse(req.body);
-    const response = await AiAgentService.processChatMessage(message, { user: req.user, history });
-    return res.status(200).json({ success: true, response });
+    const { text, attachments } = await AiAgentService.processChatMessage(message, { user: req.user, history });
+    return res.status(200).json({ success: true, response: text, attachments });
   } catch (error) {
     if (error instanceof z.ZodError) {
       return res.status(400).json({ success: false, errors: error.flatten().fieldErrors });

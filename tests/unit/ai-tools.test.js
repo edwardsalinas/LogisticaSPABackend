@@ -36,7 +36,7 @@ test('get_package_tracking: el cliente ve su paquete sin exponer sender_id', asy
   const out = JSON.parse(await tool.invoke({ code: 'TRK-1' }));
   assert.equal(out.package.tracking_code, 'TRK-1');
   assert.equal('sender_id' in out.package, false);
-  assert.equal(out.recent_tracking.length, 1);
+  assert.equal(out.timeline.length, 1);
 });
 
 test('get_package_tracking: el cliente NO puede consultar el paquete de otro usuario', async () => {

@@ -12,7 +12,7 @@ API REST para la gestión logística de bienes (paquetería/encomiendas) y servi
 
 - Implementar 6 módulos de dominio independientes (IAM, Logistics, Fleet, Tracking, Statistics, AI-Agent) con patrón Controller-Service-Schema.
 - Exponer 30+ endpoints REST documentados con Swagger/OpenAPI.
-- Integrar un Agente ReAct (LangChain.js) con 4 herramientas de consulta de solo lectura (paquete por código, búsqueda por nombre, ruta y listado de rutas), con control de acceso por rol.
+- Integrar un Agente ReAct (LangChain.js) con 9 herramientas de consulta de solo lectura y control de acceso por rol: paquete por código (ubicación aproximada, ETA, conductor y vehículo), búsqueda por nombre, mis paquetes, resumen de la operación, qué atender, agenda del conductor, flota, ruta y listado de rutas. Cada rol recibe solo las herramientas que puede usar, y la respuesta de `POST /api/ai-agent/chat` incluye `attachments` (datos estructurados para dibujar tarjetas en el chat).
 - Implementar validación de datos con Zod en todos los endpoints transaccionales.
 - Configurar un scheduler automático que proyecte rutas a 30 días basándose en cronogramas activos.
 - Gestionar 17 migraciones SQL para la evolución controlada del esquema de base de datos.
