@@ -12,7 +12,7 @@ API REST para la gestión logística de bienes (paquetería/encomiendas) y servi
 
 - Implementar 6 módulos de dominio independientes (IAM, Logistics, Fleet, Tracking, Statistics, AI-Agent) con patrón Controller-Service-Schema.
 - Exponer 30+ endpoints REST documentados con Swagger/OpenAPI.
-- Integrar un Agente ReAct (LangChain.js) con 9 herramientas de consulta de solo lectura y control de acceso por rol: paquete por código (ubicación aproximada, ETA, conductor y vehículo), búsqueda por nombre, mis paquetes, resumen de la operación, qué atender, agenda del conductor, flota, ruta y listado de rutas. Cada rol recibe solo las herramientas que puede usar, y la respuesta de `POST /api/ai-agent/chat` incluye `attachments` (datos estructurados para dibujar tarjetas en el chat).
+- Integrar un Agente ReAct (LangChain.js) con 12 herramientas y control de acceso por rol (9 de consulta de solo lectura y 3 que proponen acciones con confirmación): paquete por código (ubicación aproximada, ETA, conductor y vehículo), búsqueda por nombre, mis paquetes, resumen de la operación, qué atender, agenda del conductor, flota, ruta y listado de rutas. Cada rol recibe solo las herramientas que puede usar, y la respuesta de `POST /api/ai-agent/chat` incluye `attachments` (datos estructurados para dibujar tarjetas en el chat).
 - Implementar validación de datos con Zod en todos los endpoints transaccionales.
 - Configurar un scheduler automático que proyecte rutas a 30 días basándose en cronogramas activos.
 - Gestionar 17 migraciones SQL para la evolución controlada del esquema de base de datos.
@@ -163,7 +163,7 @@ La lista completa de variables (CORS, cookies, rate limiting, captcha, proxy) es
 | Roles | El rol se lee de `app_metadata.role` (solo escribible por el servidor). `user_metadata` lo puede editar el propio usuario, por lo que solo se admite como respaldo de transición (`AUTH_ALLOW_USER_METADATA_ROLE`). Migración: `node --env-file=.env scripts/migrate-roles-to-app-metadata.js` (usa `--dry-run` para simular) y luego `AUTH_ALLOW_USER_METADATA_ROLE=false`. |
 | Propiedad de los datos | Un cliente solo consulta el seguimiento de sus propios paquetes (REST y asistente de IA). El conductor solo opera sus viajes. |
 | Datos públicos | El rastreo público enmascara los nombres del remitente y del destinatario. |
-| Asistente de IA | Herramientas de solo lectura con control de acceso por rol, mensaje acotado a 1000 caracteres, historial limitado y tope de pasos del agente. |
+| Asistente de IA | Herramientas de consulta de solo lectura y de propuesta de acciones con confirmación, con control de acceso por rol, mensaje acotado a 1000 caracteres, historial limitado y tope de pasos del agente. |
 | Validación | Esquemas Zod en los endpoints de escritura principales. |
 
 > Contra DDoS volumétrico, el rate limiting de la aplicación no es suficiente: en producción se recomienda un CDN/WAF delante (por ejemplo Cloudflare).
@@ -220,3 +220,19 @@ En producción con HTTPS: `COOKIE_SECURE=true` y `CORS_ORIGIN` con el dominio re
 
 - **Edward Salinas**: Full Stack Developer — Arquitectura, Backend, Frontend, IA
 - **Estiven Salinas**: Full Stack Developer — Frontend, UI/UX, Testing, Despliegue
+
+## Acciones del asistente (con confirmación)
+
+El asistente puede **proponer** registrar un evento de seguimiento, entregar un paquete o crear un paquete (según el rol), pero **nunca las ejecuta**:
+
+1. Las herramientas `propose_*` validan permisos, estado y datos, y crean una *propuesta* con un resumen redactado por el servidor (no por el modelo).
+2. La interfaz la muestra como una tarjeta con **Confirmar / Cancelar**.
+3. Solo `POST /api/ai-agent/actions/:id/confirm`, llamado por el usuario con su sesión, ejecuta la acción, reutilizando los mismos servicios y reglas de la API clásica (estados finales, un conductor solo entrega paquetes de sus rutas, el responsable queda en el historial).
+
+Garantías: la propuesta es del usuario que la originó (otro recibe 404), de **un solo uso** (repetir da 409), **caduca a los 10 minutos** (410), se vuelve a comprobar el rol al confirmar y como máximo hay 5 pendientes por usuario. Una instrucción maliciosa escondida en un dato no puede ejecutar nada, porque ejecutar exige el clic del usuario. Las propuestas viven en memoria del proceso (si el servidor se reinicia hay que pedirlas de nuevo).
+
+| Acción | Quién | Reglas |
+|---|---|---|
+| Registrar evento (en tránsito / en agencia / siniestro) | Admin y operador | No sobre paquetes entregados, devueltos o cancelados; usa la última posición conocida, el origen de la ruta o la ciudad de origen |
+| Entregar paquete (con nota) | Admin, operador y conductor | El conductor solo paquetes de sus rutas; deja constancia en el historial |
+| Crear paquete | Admin y operador | Mismo esquema de validación que la API |

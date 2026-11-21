@@ -3,6 +3,7 @@ import { z } from 'zod';
 import supabase from '../../shared/config/supabase.js';
 import { haversineKm, statisticsService } from '../statistics/statistics.service.js';
 import { PACKAGE_STATUS, ROUTE_STATUS } from '../logistics/logistics.schema.js';
+import { buildActionTools } from './ai-agent.actions.js';
 
 /**
  * Herramientas (tools) del agente. Son de SOLO LECTURA y se construyen por petición, con el usuario
@@ -387,14 +388,14 @@ export const buildTools = (user, db = supabase, statsService = statisticsService
     }
   );
 
-  return [getPackageTracking, findPackagesByPerson, listMyPackages, getOperationsSummary, listPackagesNeedingAttention, getMyDeliveries, getFleetStatus, getRouteInfo, listRoutes];
+  return [getPackageTracking, findPackagesByPerson, listMyPackages, getOperationsSummary, listPackagesNeedingAttention, getMyDeliveries, getFleetStatus, getRouteInfo, listRoutes, ...buildActionTools(user, db)];
 };
 
 const TOOLS_BY_ROLE = {
-  client: ['get_package_tracking', 'find_packages_by_person', 'list_my_packages'],
-  driver: ['get_package_tracking', 'list_my_packages', 'get_my_deliveries', 'get_route_info'],
-  logistics_operator: ['get_package_tracking', 'find_packages_by_person', 'list_my_packages', 'get_operations_summary', 'list_packages_needing_attention', 'get_route_info', 'list_routes'],
-  admin: ['get_package_tracking', 'find_packages_by_person', 'list_my_packages', 'get_operations_summary', 'list_packages_needing_attention', 'get_fleet_status', 'get_route_info', 'list_routes'],
+  client: ['get_package_tracking', 'find_packages_by_person', 'list_my_packages'], // el cliente solo consulta
+  driver: ['get_package_tracking', 'list_my_packages', 'get_my_deliveries', 'get_route_info', 'propose_deliver_package'],
+  logistics_operator: ['get_package_tracking', 'find_packages_by_person', 'list_my_packages', 'get_operations_summary', 'list_packages_needing_attention', 'get_route_info', 'list_routes', 'propose_register_event', 'propose_deliver_package', 'propose_create_package'],
+  admin: ['get_package_tracking', 'find_packages_by_person', 'list_my_packages', 'get_operations_summary', 'list_packages_needing_attention', 'get_fleet_status', 'get_route_info', 'list_routes', 'propose_register_event', 'propose_deliver_package', 'propose_create_package'],
 };
 
 /** Solo las herramientas que el rol puede usar: el modelo no pierde pasos intentando las prohibidas. */
@@ -403,7 +404,7 @@ export const toolsForUser = (user, db = supabase, statsService = statisticsServi
   return buildTools(user, db, statsService).filter((tl) => allowed.includes(tl.name));
 };
 
-const ATTACHMENT_KINDS = new Set(['package_tracking', 'package_list', 'operations_summary', 'driver_agenda', 'fleet_status']);
+const ATTACHMENT_KINDS = new Set(['package_tracking', 'package_list', 'operations_summary', 'driver_agenda', 'fleet_status', 'action_proposal']);
 const MAX_ATTACHMENTS = 3;
 
 /** Datos estructurados que las herramientas devolvieron en este turno, para dibujarlos como tarjetas en el chat. */

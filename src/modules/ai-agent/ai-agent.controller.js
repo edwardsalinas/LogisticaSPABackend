@@ -1,5 +1,7 @@
 import { z } from 'zod';
 import * as AiAgentService from './ai-agent.service.js';
+import { confirmProposal, cancelProposal } from './ai-actions.service.js';
+import { defaultExecutors } from './ai-actions.executors.js';
 
 // Entrada validada: mensaje acotado e historial reciente (solo roles user/assistant, tamaño limitado)
 /**
@@ -40,5 +42,34 @@ export const handleChat = async (req, res) => {
       return res.status(busy).json({ success: false, message: 'El asistente está recibiendo muchas consultas. Espera un minuto e inténtalo de nuevo.' });
     }
     return res.status(500).json({ success: false, message: 'No se pudo procesar la consulta. Inténtalo de nuevo.' });
+  }
+};
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Respuesta común de los endpoints de acciones: los errores con status propio se muestran, el resto es genérico. */
+const actionError = (res, error) => {
+  if (error.status && error.status < 500) return res.status(error.status).json({ success: false, message: error.message });
+  console.error('[AI Action Error]:', error);
+  return res.status(500).json({ success: false, message: 'No se pudo ejecutar la acción. Inténtalo de nuevo o hazlo desde la pantalla correspondiente.' });
+};
+
+/** El usuario confirmó una propuesta del asistente: se ejecuta con SU sesión y sus permisos. */
+export const handleConfirmAction = async (req, res) => {
+  try {
+    if (!UUID_RE.test(req.params.id)) return res.status(404).json({ success: false, message: 'La acción no existe o ya no está disponible' });
+    const result = await confirmProposal(req.params.id, req.user, defaultExecutors);
+    return res.status(200).json({ success: true, result });
+  } catch (error) {
+    return actionError(res, error);
+  }
+};
+
+export const handleCancelAction = async (req, res) => {
+  try {
+    if (!UUID_RE.test(req.params.id)) return res.status(404).json({ success: false, message: 'La acción no existe o ya no está disponible' });
+    return res.status(200).json({ success: true, result: cancelProposal(req.params.id, req.user) });
+  } catch (error) {
+    return actionError(res, error);
   }
 };
