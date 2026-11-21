@@ -1,0 +1,58 @@
+# Orquestación de toda la plataforma (frontend + backend).
+#
+# Estructura esperada (ambos repositorios clonados lado a lado):
+#   RepositoriosSPA/
+#     LogisticaSPABackend/    <- este archivo
+#     LogisticaSPAFrontend/
+#
+# Uso:
+#   cp .env.example .env   (completar SUPABASE_*, LLM_API_KEY, ...)
+#   docker compose up --build
+#   Frontend: http://localhost:8080      API (vía nginx): http://localhost:8080/api
+#   Swagger:  http://localhost:8080/api-docs
+#   (si el 8080 está ocupado: FRONTEND_PORT=18080 docker compose up --build)
+#
+# La base de datos (PostgreSQL) y la autenticación las provee Supabase Cloud, por lo que
+# no hay un servicio de base de datos en este archivo.
+
+services:
+  backend:
+    build:
+      context: .
+    container_name: logistica-backend
+    env_file: .env
+    environment:
+      PORT: "3000"
+      NODE_ENV: production
+      # En local la comunicación es HTTP, así que la cookie no puede ser "Secure".
+      # En producción con HTTPS: COOKIE_SECURE=true
+      COOKIE_SECURE: "false"
+      COOKIE_SAMESITE: lax
+      # nginx es el único proxy delante de la API (necesario para el rate limiting por IP)
+      TRUST_PROXY: "1"
+      CORS_ORIGIN: http://localhost:${FRONTEND_PORT:-8080}
+    expose:
+      - "3000"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  frontend:
+    build:
+      context: ../LogisticaSPAFrontend
+      args:
+        # Misma origin: nginx reenvía /api al backend, por lo que las cookies de sesión funcionan sin CORS
+        VITE_API_URL: /api
+        VITE_TURNSTILE_SITE_KEY: ${TURNSTILE_SITE_KEY:-}
+    container_name: logistica-frontend
+    ports:
+      # Puerto del host; cambiarlo con FRONTEND_PORT si el 8080 está ocupado
+      - "${FRONTEND_PORT:-8080}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
