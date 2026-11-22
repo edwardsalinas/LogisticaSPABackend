@@ -172,13 +172,40 @@ export const buildActionTools = (user, db) => {
           return `Faltan o son inválidos algunos datos del paquete (${problems}). Pídeselos al usuario.`;
         }
         const d = parsed.data;
+
+        // Agendarlo en un viaje concreto: el viaje debe existir, estar planeado y tener espacio para el peso
+        let tripLine = null;
+        if (input.route_ref) {
+          const ref = String(input.route_ref).trim();
+          const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(ref);
+          const q = db.from('transport_routes').select('id, route_code, origin, destination, status, departure_time, vehicle_id');
+          const { data: route } = await (isUuid ? q.eq('id', ref) : q.eq('route_code', ref)).maybeSingle();
+          if (!route) return 'No encontré ese viaje. Pídele al usuario que elija uno de los que mostró la disponibilidad.';
+          if (route.status !== 'planeada') return 'Ese viaje ya no está disponible para agendar (no está planeado).';
+          if (route.vehicle_id) {
+            const [{ data: vehicle }, { data: loads }] = await Promise.all([
+              db.from('vehicles').select('capacity_kg').eq('id', route.vehicle_id).maybeSingle(),
+              db.from('packages').select('peso').eq('route_id', route.id),
+            ]);
+            const capacity = vehicle?.capacity_kg != null ? Number(vehicle.capacity_kg) : null;
+            const used = (loads || []).reduce((s, p) => s + (Number(p.peso) || 0), 0);
+            if (capacity != null && capacity - used < d.peso) {
+              return `El viaje no tiene espacio: quedan ${Math.max(0, Math.round((capacity - used) * 10) / 10)} kg y el paquete pesa ${d.peso} kg.`;
+            }
+          }
+          d.route_id = route.id;
+          const when = new Date(route.departure_time).toLocaleString('es-BO', { timeZone: 'America/La_Paz', weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' });
+          tripLine = `Se agenda en el viaje ${route.origin} → ${route.destination}, sale ${when}`;
+        }
+
         const proposal = createProposal({
           user,
           type: 'create_package',
           params: { data: d },
-          title: 'Registrar un paquete nuevo',
+          title: tripLine ? 'Registrar un paquete y agendarlo' : 'Registrar un paquete nuevo',
           lines: [
             `Ruta: ${d.origen} → ${d.destino}`,
+            ...(tripLine ? [tripLine] : []),
             `Peso: ${d.peso} kg`,
             `Destinatario: ${d.recipient_name}${d.recipient_phone ? ` (${d.recipient_phone})` : ''}`,
             ...(d.sender_name ? [`Remitente: ${d.sender_name}${d.sender_phone ? ` (${d.sender_phone})` : ''}`] : []),
@@ -198,6 +225,7 @@ export const buildActionTools = (user, db) => {
         destino: z.string().describe('Ciudad de destino'),
         peso: z.number().describe('Peso en kilogramos'),
         recipient_name: z.string().describe('Nombre del destinatario'),
+        route_ref: z.string().optional().describe('Viaje en el que agendarlo: el campo ref devuelto por find_available_trips'),
         recipient_phone: z.string().optional().describe('Teléfono del destinatario'),
         sender_name: z.string().optional().describe('Nombre del remitente'),
         sender_phone: z.string().optional().describe('Teléfono del remitente'),

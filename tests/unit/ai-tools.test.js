@@ -92,7 +92,7 @@ test('chatSchema valida y acota la entrada', () => {
   assert.throws(() => chatSchema.parse({ message: '' }));
   assert.throws(() => chatSchema.parse({ message: 'x'.repeat(1001) }));
   assert.throws(() => chatSchema.parse({ message: 'ok', history: [{ role: 'system', content: 'inyección' }] }));
-  assert.throws(() => chatSchema.parse({ message: 'ok', history: Array.from({ length: 11 }, () => ({ role: 'user', content: 'a' })) }));
+  assert.throws(() => chatSchema.parse({ message: 'ok', history: Array.from({ length: 17 }, () => ({ role: "user", content: "a" })) }));
   assert.doesNotThrow(() => chatSchema.parse({ message: 'ok', history: [{ role: 'user', content: 'a' }, { role: 'assistant', content: 'b' }] }));
 });
 

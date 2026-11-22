@@ -22,14 +22,16 @@ export const chatSchema = z.object({
         content: z.string().max(2000),
       })
     )
-    .max(10)
+    .max(16)
     .optional(),
+  // true cuando el usuario habla con el asistente: la respuesta se leerá en voz alta y debe ser corta y hablada
+  voice: z.boolean().optional(),
 });
 
 export const handleChat = async (req, res) => {
   try {
-    const { message, history } = chatSchema.parse(req.body);
-    const { text, attachments } = await AiAgentService.processChatMessage(message, { user: req.user, history });
+    const { message, history, voice } = chatSchema.parse(req.body);
+    const { text, attachments } = await AiAgentService.processChatMessage(message, { user: req.user, history, voice });
     return res.status(200).json({ success: true, response: text, attachments });
   } catch (error) {
     if (error instanceof z.ZodError) {

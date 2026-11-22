@@ -12,7 +12,7 @@ API REST para la gestión logística de bienes (paquetería/encomiendas) y servi
 
 - Implementar 6 módulos de dominio independientes (IAM, Logistics, Fleet, Tracking, Statistics, AI-Agent) con patrón Controller-Service-Schema.
 - Exponer 30+ endpoints REST documentados con Swagger/OpenAPI.
-- Integrar un Agente ReAct (LangChain.js) con 12 herramientas y control de acceso por rol (9 de consulta de solo lectura y 3 que proponen acciones con confirmación): paquete por código (ubicación aproximada, ETA, conductor y vehículo), búsqueda por nombre, mis paquetes, resumen de la operación, qué atender, agenda del conductor, flota, ruta y listado de rutas. Cada rol recibe solo las herramientas que puede usar, y la respuesta de `POST /api/ai-agent/chat` incluye `attachments` (datos estructurados para dibujar tarjetas en el chat).
+- Integrar un Agente ReAct (LangChain.js) con 14 herramientas y control de acceso por rol (11 de consulta de solo lectura y 3 que proponen acciones con confirmación): paquete por código (ubicación aproximada, ETA, conductor y vehículo), búsqueda por nombre, mis paquetes, resumen de la operación, qué atender, agenda del conductor, flota, ruta y listado de rutas. Cada rol recibe solo las herramientas que puede usar, y la respuesta de `POST /api/ai-agent/chat` incluye `attachments` (datos estructurados para dibujar tarjetas en el chat).
 - Implementar validación de datos con Zod en todos los endpoints transaccionales.
 - Configurar un scheduler automático que proyecte rutas a 30 días basándose en cronogramas activos.
 - Gestionar 17 migraciones SQL para la evolución controlada del esquema de base de datos.
@@ -236,3 +236,11 @@ Garantías: la propuesta es del usuario que la originó (otro recibe 404), de **
 | Registrar evento (en tránsito / en agencia / siniestro) | Admin y operador | No sobre paquetes entregados, devueltos o cancelados; usa la última posición conocida, el origen de la ruta o la ciudad de origen |
 | Entregar paquete (con nota) | Admin, operador y conductor | El conductor solo paquetes de sus rutas; deja constancia en el historial |
 | Crear paquete | Admin y operador | Mismo esquema de validación que la API |
+
+## Disponibilidad y conversación
+
+- **`find_available_trips`** (todos los roles): viajes planeados en una fecha y horario (hora de Bolivia, UTC-4), por origen y destino, con el espacio libre de cada vehículo (`capacidad − peso de los paquetes asignados`) y si el paquete cabe. Sin resultados, devuelve los próximos viajes (14 días) como alternativa.
+- **`check_fleet_availability`** (admin y operador): vehículos y conductores libres u ocupados en un horario, según los viajes que se solapan (sin llegada estimada se suponen 2 h).
+- **Agendar:** `propose_create_package` acepta `route_ref` (código o id del viaje): comprueba que el viaje esté planeado y tenga espacio antes de proponer, y al confirmar el paquete queda asignado.
+- **Conversación:** cada consulta recibe el calendario de los próximos 10 días con su fecha exacta (el modelo no calcula "el viernes"), reglas para resolver varias peticiones en un mismo mensaje y para preguntar solo lo imprescindible. El historial acepta hasta 16 mensajes.
+- **Modo voz:** `POST /api/ai-agent/chat` acepta `voice: true`; el modelo responde en 1–3 frases, sin símbolos y con las cifras dichas como se hablan, porque se leerán en voz alta.
