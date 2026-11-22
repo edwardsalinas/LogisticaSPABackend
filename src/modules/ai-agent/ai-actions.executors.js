@@ -1,29 +1,99 @@
+import supabase from '../../shared/config/supabase.js';
 import * as TrackingService from '../tracking/tracking.service.js';
 import * as LogisticsService from '../logistics/logistics.service.js';
+import { PACKAGE_STATUS } from '../logistics/logistics.schema.js';
+import { checkRouteForPackage } from './ai-agent.actions.js';
 
 /**
  * Qué hace cada acción al confirmarse. Reutiliza los MISMOS servicios que la API REST y la interfaz clásica,
  * así que se aplican las mismas reglas (estados finales, un conductor solo entrega paquetes de sus rutas,
  * responsable registrado en el historial, etc.). `user` es siempre el usuario autenticado que confirmó.
+ *
+ * Con varios paquetes, cada uno se procesa por separado: si uno falla, los demás siguen y el resultado dice
+ * cuáles se hicieron y cuáles no (no hay "todo o nada": cada paquete es independiente).
  */
 const STATUS_LABELS = { en_transito: 'En tránsito', en_agencia: 'En agencia', siniestro: 'Siniestro' };
+const ASSIGNABLE = [PACKAGE_STATUS.PENDING, PACKAGE_STATUS.ASSIGNED];
+
+const reasonOf = (error) => (error?.status && error.status < 500 ? error.message : 'no se pudo completar');
+
+/** Ejecuta `fn` por cada elemento y devuelve [{ tracking_code, ok, error? }]. */
+export const runBatch = async (items, fn) => {
+  const results = [];
+  const errors = [];
+  for (const item of items) {
+    try {
+      await fn(item);
+      results.push({ tracking_code: item.tracking_code, ok: true });
+    } catch (error) {
+      errors.push(error);
+      console.error(`[AI Action] ${item.tracking_code}:`, error.message);
+      results.push({ tracking_code: item.tracking_code, ok: false, error: reasonOf(error) });
+    }
+  }
+  return { results, errors };
+};
+
+/**
+ * Resultado final. Un solo paquete: mensaje de siempre y, si falla, el error original (con su código HTTP).
+ * Varios: resumen "N de M" con lo que falló; si no se hizo ninguno, es un error.
+ */
+export const summarize = ({ results, errors }, { one, many }) => {
+  if (results.length === 1) {
+    if (!results[0].ok) throw errors[0];
+    return { message: one(results[0].tracking_code), data: { results } };
+  }
+  const ok = results.filter((r) => r.ok);
+  const failed = results.filter((r) => !r.ok);
+  if (ok.length === 0) {
+    throw Object.assign(new Error(`No se pudo hacer ninguno: ${failed.map((r) => `${r.tracking_code} (${r.error})`).join('; ')}`), { status: 409 });
+  }
+  const tail = failed.length ? ` No se pudo con: ${failed.map((r) => `${r.tracking_code} (${r.error})`).join('; ')}.` : '';
+  return { message: `${many(ok.length, results.length)}${tail}`, data: { results } };
+};
 
 export const defaultExecutors = {
   async register_tracking_event(p, user) {
-    const event = await TrackingService.logEvent(
-      { package_id: p.package_id, lat: p.lat, lng: p.lng, status: p.status, observations: p.observations },
-      user
+    const outcome = await runBatch(p.items, (item) =>
+      TrackingService.logEvent({ package_id: item.package_id, lat: item.lat, lng: item.lng, status: p.status, observations: p.observations }, user)
     );
-    return { message: `Evento "${STATUS_LABELS[p.status] ?? p.status}" registrado para ${p.tracking_code}.`, data: { tracking_code: p.tracking_code, event_id: event?.id } };
+    const label = STATUS_LABELS[p.status] ?? p.status;
+    return summarize(outcome, {
+      one: (code) => `Evento "${label}" registrado para ${code}.`,
+      many: (n, total) => `Evento "${label}" registrado en ${n} de ${total} paquetes.`,
+    });
   },
 
   async deliver_package(p, user) {
-    await LogisticsService.deliverPackage(p.package_id, { user, note: p.note });
-    return { message: `Paquete ${p.tracking_code} marcado como entregado.`, data: { tracking_code: p.tracking_code } };
+    const outcome = await runBatch(p.items, (item) => LogisticsService.deliverPackage(item.package_id, { user, note: p.note }));
+    return summarize(outcome, {
+      one: (code) => `Paquete ${code} marcado como entregado.`,
+      many: (n, total) => `Entregados ${n} de ${total} paquetes.`,
+    });
   },
 
   async create_package(p, user) {
     const created = await LogisticsService.createPackage(p.data, user.id);
-    return { message: `Paquete creado con el código ${created.tracking_code}.`, data: { tracking_code: created.tracking_code } };
+    const where = p.data.route_id ? ' y agendado en el viaje elegido' : '';
+    return { message: `Paquete creado con el código ${created.tracking_code}${where}.`, data: { tracking_code: created.tracking_code } };
+  },
+
+  async assign_package(p) {
+    // Se vuelve a comprobar AHORA: entre proponer y confirmar el viaje pudo llenarse o iniciar
+    const totalKg = p.items.reduce((s, i) => s + (i.peso || 0), 0);
+    const check = await checkRouteForPackage(supabase, p.route_id, totalKg);
+    if (check.error) throw Object.assign(new Error(check.error), { status: 409 });
+
+    const outcome = await runBatch(p.items, async (item) => {
+      const { data: current } = await supabase.from('packages').select('status').eq('id', item.package_id).maybeSingle();
+      if (!current || !ASSIGNABLE.includes(current.status)) {
+        throw Object.assign(new Error('ya no se puede asignar (cambió de estado)'), { status: 409 });
+      }
+      await LogisticsService.assignPackageToRoute(item.package_id, p.route_id);
+    });
+    return summarize(outcome, {
+      one: (code) => `Paquete ${code} asignado al viaje.`,
+      many: (n, total) => `Asignados ${n} de ${total} paquetes al viaje.`,
+    });
   },
 };

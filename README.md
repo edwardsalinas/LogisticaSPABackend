@@ -12,7 +12,7 @@ API REST para la gestión logística de bienes (paquetería/encomiendas) y servi
 
 - Implementar 6 módulos de dominio independientes (IAM, Logistics, Fleet, Tracking, Statistics, AI-Agent) con patrón Controller-Service-Schema.
 - Exponer 30+ endpoints REST documentados con Swagger/OpenAPI.
-- Integrar un Agente ReAct (LangChain.js) con 14 herramientas y control de acceso por rol (11 de consulta de solo lectura y 3 que proponen acciones con confirmación): paquete por código (ubicación aproximada, ETA, conductor y vehículo), búsqueda por nombre, mis paquetes, resumen de la operación, qué atender, agenda del conductor, flota, ruta y listado de rutas. Cada rol recibe solo las herramientas que puede usar, y la respuesta de `POST /api/ai-agent/chat` incluye `attachments` (datos estructurados para dibujar tarjetas en el chat).
+- Integrar un Agente ReAct (LangChain.js) con 17 herramientas y control de acceso por rol (13 de consulta de solo lectura y 4 que proponen acciones con confirmación): paquete por código (ubicación aproximada, ETA, conductor y vehículo), búsqueda por nombre, mis paquetes, resumen de la operación, qué atender, agenda del conductor, flota, ruta y listado de rutas. Cada rol recibe solo las herramientas que puede usar, y la respuesta de `POST /api/ai-agent/chat` incluye `attachments` (datos estructurados para dibujar tarjetas en el chat).
 - Implementar validación de datos con Zod en todos los endpoints transaccionales.
 - Configurar un scheduler automático que proyecte rutas a 30 días basándose en cronogramas activos.
 - Gestionar 17 migraciones SQL para la evolución controlada del esquema de base de datos.
@@ -244,3 +244,11 @@ Garantías: la propuesta es del usuario que la originó (otro recibe 404), de **
 - **Agendar:** `propose_create_package` acepta `route_ref` (código o id del viaje): comprueba que el viaje esté planeado y tenga espacio antes de proponer, y al confirmar el paquete queda asignado.
 - **Conversación:** cada consulta recibe el calendario de los próximos 10 días con su fecha exacta (el modelo no calcula "el viernes"), reglas para resolver varias peticiones en un mismo mensaje y para preguntar solo lo imprescindible. El historial acepta hasta 16 mensajes.
 - **Modo voz:** `POST /api/ai-agent/chat` acepta `voice: true`; el modelo responde en 1–3 frases, sin símbolos y con las cifras dichas como se hablan, porque se leerán en voz alta.
+
+## Asistente profesional: lotes, asignación y resúmenes
+
+- **Acciones en lote:** `propose_deliver_package`, `propose_register_event` y `propose_assign_package` aceptan hasta 10 paquetes (`codes`) con **una sola confirmación**. Lo que no se puede incluir (no existe, ya entregado, sin ubicación, sin espacio…) se **omite y se dice por qué**, antes de confirmar. Al confirmar, cada paquete se ejecuta por separado (un fallo no impide los demás) y el resultado se devuelve **por paquete** (`result.data.results`); si no se hizo ninguno, es un error 409.
+- **Asignar a un viaje:** `propose_assign_package` comprueba que el viaje esté planeado y que haya espacio para **todos** los paquetes juntos, y avisa si el destino no coincide. Al confirmar se **vuelve a comprobar** el viaje y el estado de cada paquete (pudieron cambiar entre proponer y confirmar).
+- **`get_daily_briefing`** (admin y operador): indicadores, **prioridades ya ordenadas** (las calcula el servidor, no el modelo), paquetes con siniestro o retrasados, pendientes sin viaje y salidas de hoy, en una sola llamada (menos pasos del agente = respuestas más rápidas).
+- **`get_analytics_summary`** (admin y operador): envíos y variación, entregas a tiempo, estado de los envíos, mejores conductores y días de más movimiento de un período (máximo 92 días).
+- **Rigor:** el prompt prohíbe afirmar datos del usuario sin haberlos consultado, exige verificar antes de proponer, informar lo omitido y dar cifras exactas; una prueba protege estas reglas.

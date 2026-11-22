@@ -21,6 +21,7 @@ export const ACTION_ROLES = {
   register_tracking_event: OPS,
   deliver_package: [...OPS, 'driver'],
   create_package: OPS,
+  assign_package: OPS,
 };
 
 const store = new Map();
