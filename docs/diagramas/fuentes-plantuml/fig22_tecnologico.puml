@@ -1,0 +1,46 @@
+@startuml
+!pragma layout smetana
+title Arquitectura tecnológica: Plataforma Logística Asistida por IA
+skinparam defaultFontName SansSerif
+skinparam rectangle {
+  RoundCorner 18
+}
+
+rectangle "Navegador (cliente)" as nav #E3F2FD {
+  rectangle "Frontend Web\nReact 19 + Vite + Tailwind\nOperador, administrador y cliente" as web #BBDEFB
+  rectangle "Frontend web móvil (conductor)\nGPS + cola sin conexión\n(IndexedDB y service worker)" as mov #BBDEFB
+  rectangle "Voz del navegador\n(Web Speech API)" as voz #BBDEFB
+}
+
+rectangle "Docker Compose" as dock #ECEFF1 {
+  rectangle "Contenedor Frontend\nnginx: sirve la SPA y\nhace proxy de /api (mismo origen)" as fe #CFD8DC
+  rectangle "Contenedor Backend\nNode.js + Express 5 (monolito modular)\nIAM · Logistics · Tracking · Fleet · Statistics\nAgente IA: balanceador, acciones, historial\nRate limiting · CORS · captcha" as be #C5CAE9
+}
+
+rectangle "Supabase Cloud" as sup #E8F5E9 {
+  rectangle "Supabase Auth\nUsuarios y JWT" as auth #C8E6C9
+  rectangle "Supabase DB\nPostgreSQL + RLS\n(incluye conversaciones\ny auditoría de la IA)" as sdb #C8E6C9
+}
+
+rectangle "Proveedores de modelos de IA\n(planes gratuitos, con respaldo automático)" as ia #FFF3E0 {
+  rectangle "Gemini" as g #FFE0B2
+  rectangle "Groq" as q #FFE0B2
+  rectangle "Cerebras" as c #FFE0B2
+  rectangle "OpenRouter" as o #FFE0B2
+}
+
+rectangle "Cloudflare Turnstile\nverificación de captcha (opcional)" as cf #FFF3E0
+
+web --> fe : HTTPS
+mov --> fe : HTTPS
+web ..> voz
+fe --> be : HTTP /api
+be --> auth : HTTPS
+be --> sdb : HTTPS
+be --> g : HTTPS
+be --> q : HTTPS
+be --> c : HTTPS
+be --> o : HTTPS
+be ..> cf : HTTPS
+web ..> cf : widget captcha
+@enduml

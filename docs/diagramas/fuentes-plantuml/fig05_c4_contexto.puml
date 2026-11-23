@@ -1,0 +1,21 @@
+@startuml
+!pragma layout smetana
+!include <C4/C4_Context>
+LAYOUT_WITH_LEGEND()
+title Diagrama de Contexto (Nivel 1) - Plataforma Logística Asistida por IA
+
+Person(cliente, "Cliente / Remitente", "Consulta sus paquetes y le pregunta al asistente.")
+Person(conductor, "Conductor", "Inicia el viaje desde el celular, valida puntos de control y entrega.")
+Person(operador, "Operador logístico", "Registra paquetes, planifica viajes y confirma lo que propone el asistente.")
+Person(admin, "Administrador", "Gestiona flota y reportes y vigila el uso de la IA.")
+
+System(plataforma, "Plataforma Logística", "Seguimiento de envíos, gestión de viajes y asistente conversacional con voz, historial y lectura de guías por foto.")
+
+System_Ext(llm, "Proveedores de modelos de IA", "Gemini, Groq, Cerebras y OpenRouter (planes gratuitos). Si uno falla o se satura, responde otro.")
+
+Rel(cliente, plataforma, "Consulta su envío y chatea con el asistente", "HTTPS")
+Rel(conductor, plataforma, "Inicia viajes y confirma entregas", "HTTPS")
+Rel(operador, plataforma, "Registra, asigna y confirma acciones del asistente", "HTTPS")
+Rel(admin, plataforma, "Administra la operación", "HTTPS")
+Rel(plataforma, llm, "Envía la consulta con herramientas y recibe la respuesta", "API REST / HTTPS")
+@enduml

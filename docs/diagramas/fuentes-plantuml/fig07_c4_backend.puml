@@ -1,0 +1,43 @@
+@startuml
+!pragma layout smetana
+!include <C4/C4_Component>
+LAYOUT_WITH_LEGEND()
+title Diagrama de Componentes (Nivel 3) - API Application (Backend)
+
+Container(spa, "SPA (React)", "Frontend", "Interfaz web")
+ContainerDb(db, "Supabase", "PostgreSQL + Auth", "Datos operativos, conversaciones y auditoría de la IA")
+System_Ext(llm, "Proveedores de IA", "Gemini, Groq, Cerebras, OpenRouter")
+
+Container_Boundary(api, "API Application [Node.js + Express 5]") {
+  Component(seg, "Seguridad", "JWT, RBAC, límites de peticiones", "Valida la sesión, el rol y el ritmo de mensajes")
+  Component(core, "Core logístico", "Servicios", "Paquetes, rutas, flota y estadísticas")
+  Component(traz, "Motor de trazabilidad", "Servicios", "Registra hitos y puntos de control")
+
+  Component(ctrl, "Controlador del asistente", "Express", "Chat, chat en vivo (SSE), documentos, sugerencias, acciones, historial y uso")
+  Component(intent, "Selector de intención y caché", "Servicio", "Elige las herramientas, caché de 45 s y atajos de una sola llamada")
+  Component(agent, "Agente ReAct", "LangChain.js", "18 herramientas: 14 de consulta y 4 que solo proponen acciones")
+  Component(pool, "Balanceador de modelos", "llm.pool", "4 proveedores, límites por minuto, enfriamientos y respaldo automático")
+  Component(acc, "Acciones con confirmación", "Servicio", "Propuestas con vigencia; se ejecutan solo al confirmar y según el rol")
+  Component(sug, "Planificador de asignaciones", "Servicio", "Sugiere a qué viaje enviar cada paquete suelto")
+  Component(doc, "Lector de documentos", "Visión + validación", "Lee la foto de la guía; valida la imagen y resiste órdenes escondidas")
+  Component(hist, "Historial y auditoría", "Servicio", "Guarda conversaciones y métricas de uso (sin contenido)")
+}
+
+Rel(spa, seg, "Peticiones HTTP con JWT", "JSON / HTTPS")
+Rel(seg, core, "Autoriza")
+Rel(seg, ctrl, "Autoriza")
+Rel(core, traz, "Dispara eventos")
+Rel(ctrl, intent, "Mensaje del usuario")
+Rel(intent, agent, "Herramientas permitidas al rol")
+Rel(agent, pool, "Pide un modelo")
+Rel(pool, llm, "Invoca con respaldo", "REST / HTTPS")
+Rel(agent, acc, "Prepara propuestas")
+Rel(ctrl, sug, "Sugerencias")
+Rel(ctrl, doc, "Foto de la guía")
+Rel(ctrl, hist, "Guarda cada intercambio")
+Rel(acc, core, "Ejecuta al confirmar")
+Rel(agent, db, "Consultas de solo lectura", "HTTPS")
+Rel(core, db, "Lee y escribe", "HTTPS")
+Rel(traz, db, "Inserta hitos", "HTTPS")
+Rel(hist, db, "ai_conversations, ai_messages, ai_chat_audit", "HTTPS")
+@enduml

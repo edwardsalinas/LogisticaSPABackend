@@ -1,0 +1,63 @@
+@startuml
+title Procesos logísticos asistidos por IA (notación BPMN / carriles)
+skinparam defaultFontName SansSerif
+skinparam ActivityBackgroundColor #E3F2FD
+skinparam ActivityBorderColor #4A90D9
+skinparam swimlaneWidth 190
+skinparam wrapWidth 170
+
+|Cliente|
+start
+:Solicita el envío\n(origen, destino, peso);
+|Operador|
+:Recibe el pedido;
+if (¿Tiene la foto de la guía\nde remisión?) then (sí)
+  |Agente IA|
+  :Lee la foto con un modelo de\nvisión y propone los datos;
+  |Operador|
+  :Revisa y corrige los datos;
+else (no)
+  |Operador|
+  :Lo escribe en el formulario\no se lo pide al asistente;
+endif
+|Agente IA|
+:Prepara la propuesta\n"Registrar paquete";
+|Operador|
+:Confirma la propuesta;
+|Sistema|
+:Registra el paquete y genera\nel código de rastreo (pendiente);
+|Operador|
+:Pide sugerencias de asignación;
+|Agente IA|
+:Propone a qué viaje enviar\ncada paquete suelto;
+|Operador|
+:Confirma la asignación;
+|Sistema|
+:Estado: asignado;
+|Conductor|
+:Inicia el viaje;
+|Sistema|
+:Estado: en tránsito;
+fork
+  |Conductor|
+  repeat
+    :Envía su posición GPS;
+    |Sistema|
+    :Registra el seguimiento y\ndetecta puntos de control;
+    |Conductor|
+  repeat while (¿Llegó al destino?) is (no) not (sí)
+  :Confirma la entrega\n(con nota opcional);
+  |Sistema|
+  :Estado: entregado;\ncierra el viaje y la ruta;
+fork again
+  |Cliente|
+  :Consulta su paquete\n(código o chat);
+  |Agente IA|
+  :Elige un modelo disponible (balanceador),\nconsulta el seguimiento de solo\nlectura según su rol y responde en vivo;
+  |Cliente|
+  :Recibe la respuesta;
+end fork
+|Cliente|
+:Recibe el paquete;
+stop
+@enduml

@@ -1,0 +1,25 @@
+@startuml
+!pragma layout smetana
+!include <C4/C4_Container>
+LAYOUT_WITH_LEGEND()
+title Diagrama de Contenedores (Nivel 2) - Plataforma Logística
+
+Person(cliente, "Cliente", "Consulta sus paquetes")
+Person(conductor, "Conductor", "Entrega desde el celular")
+Person(operador, "Operador / Administrador", "Gestiona la operación")
+
+System_Boundary(sistema, "Plataforma Logística") {
+  Container(spa, "Single Page Application", "React 19, Vite, Tailwind", "Interfaz web responsiva. Chat con respuesta en vivo, voz del navegador, historial y lectura de guías por foto.")
+  Container(api, "API Application (monolito modular)", "Node.js, Express 5", "IAM, logística, tracking, flota y estadísticas. Agente de IA con balanceador de modelos, acciones con confirmación, historial y auditoría.")
+  ContainerDb(db, "Base de datos y autenticación", "Supabase (PostgreSQL + RLS + Auth)", "Paquetes, viajes, seguimiento, flota, conversaciones del asistente y métricas de uso.")
+}
+
+System_Ext(llm, "Proveedores de modelos de IA", "Gemini, Groq, Cerebras, OpenRouter")
+
+Rel(cliente, spa, "Consulta su envío y chatea", "HTTPS")
+Rel(conductor, spa, "Usa el panel móvil", "HTTPS")
+Rel(operador, spa, "Usa el panel y el asistente", "HTTPS")
+Rel(spa, api, "Llamadas REST y respuesta en vivo (SSE)", "JSON / HTTPS")
+Rel(api, db, "Lee y escribe datos operativos", "HTTPS")
+Rel(api, llm, "Consulta con herramientas; reparte la carga y usa otro modelo si uno falla", "REST / HTTPS")
+@enduml

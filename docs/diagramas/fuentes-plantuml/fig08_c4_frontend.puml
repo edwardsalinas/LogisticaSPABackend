@@ -1,0 +1,39 @@
+@startuml
+!pragma layout smetana
+!include <C4/C4_Component>
+LAYOUT_WITH_LEGEND()
+title Diagrama de Componentes (Nivel 3) - Single Page Application (Frontend React)
+
+Container(api, "API Application", "Node.js", "Servicios REST y respuesta en vivo (SSE)")
+System_Ext(voz, "Reconocimiento y síntesis de voz", "Web Speech API del navegador")
+
+Container_Boundary(spa, "Single Page Application [React 19]") {
+  Component(shell, "UI Shell / Router", "React Router", "Navegación, menú por rol y Modo IA")
+  Component(auth, "Auth Provider", "React Context", "Sesión JWT y roles")
+  Component(dash, "Dashboard y Paquetes", "React", "Indicadores, manifiestos y registro")
+  Component(rutas, "Viajes y Tracking", "React", "Calendario, mapa y eventos")
+  Component(chofer, "Vista Conductor (móvil)", "React", "Iniciar, validar puntos y entregar con GPS y cola sin conexión")
+  Component(flota, "Flota y Analítica", "React", "Vehículos, conductores y reportes (administrador)")
+
+  Component(hook, "Estado del chat", "useAssistantChat", "Envía el mensaje y recibe el texto en vivo; reintenta con la sesión renovada")
+  Component(home, "Pantalla y panel flotante del asistente", "React", "Atajos, conversación y panel sobre cualquier pantalla")
+  Component(cards, "Burbujas y tarjetas", "React", "Resumen, paquetes, sugerencias y propuestas a confirmar")
+  Component(vozc, "Modo voz", "React", "Habla y escucha; nunca confirma acciones")
+  Component(histc, "Historial y uso de la IA", "React", "Conversaciones anteriores y panel del administrador")
+  Component(docc, "Lectura de guías", "React", "Foto, datos editables y propuesta de registro")
+}
+
+Rel(shell, auth, "Valida acceso a rutas")
+Rel(shell, dash, "Renderiza")
+Rel(shell, rutas, "Renderiza")
+Rel(shell, chofer, "Renderiza")
+Rel(shell, flota, "Renderiza")
+Rel(shell, home, "Renderiza")
+Rel(home, hook, "Usa")
+Rel(home, cards, "Muestra")
+Rel(home, vozc, "Activa")
+Rel(home, histc, "Abre")
+Rel(home, docc, "Abre")
+Rel(vozc, voz, "Reconoce y lee en voz alta")
+Rel(spa, api, "Llamadas REST (login, paquetes, viajes, flota, historial, documentos) y mensajes del asistente con respuesta en vivo (SSE)", "JSON y SSE / HTTPS")
+@enduml

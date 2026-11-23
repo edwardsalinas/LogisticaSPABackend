@@ -1,0 +1,56 @@
+@startuml
+!pragma layout smetana
+title Modelo de Componentes UML 2.5 - Plataforma Logística LogisticaSPA
+skinparam componentStyle uml2
+skinparam defaultFontName SansSerif
+
+package "Frontend (navegador)" {
+  component "LogisticaSPA" <<spa>> #E1F2FD {
+    [Paneles por rol] <<react>> #BBDEFB
+    [Asistente (chat, voz, historial)] <<react>> #BBDEFB
+    [Vista Conductor] <<react>> #BBDEFB
+  }
+}
+
+package "Backend (Node.js + Express 5)" {
+  [Seguridad (JWT, RBAC, límites)] <<middleware>> #C8E6C9
+  [Core logístico y tracking] <<express>> #C8E6C9
+  [Controlador del asistente] <<express>> #C8E6C9
+  [Agente ReAct (LangChain.js)] <<llm service>> #E1BEE7
+  [Balanceador de modelos] <<llm service>> #E1BEE7
+  [Acciones con confirmación] <<servicio>> #C8E6C9
+  [Planificador y lector de guías] <<servicio>> #C8E6C9
+  [Historial y auditoría] <<servicio>> #C8E6C9
+}
+
+database "Supabase / PostgreSQL" <<database>> {
+  [paquetes, viajes, seguimiento] <<table>>
+  [ai_conversations, ai_messages] <<table>>
+  [ai_chat_audit] <<table>>
+}
+
+cloud "Gemini" <<external api>> as g
+cloud "Groq" <<external api>> as q
+cloud "Cerebras" <<external api>> as c
+cloud "OpenRouter" <<external api>> as o
+
+[Paneles por rol] ..> [Seguridad (JWT, RBAC, límites)] : <<HTTP>> JSON
+[Vista Conductor] ..> [Seguridad (JWT, RBAC, límites)] : <<HTTP>> JSON
+[Asistente (chat, voz, historial)] ..> [Seguridad (JWT, RBAC, límites)] : <<HTTP POST>> SSE
+[Seguridad (JWT, RBAC, límites)] --> [Core logístico y tracking]
+[Seguridad (JWT, RBAC, límites)] --> [Controlador del asistente]
+[Controlador del asistente] --> [Agente ReAct (LangChain.js)]
+[Controlador del asistente] --> [Planificador y lector de guías]
+[Controlador del asistente] --> [Historial y auditoría]
+[Agente ReAct (LangChain.js)] --> [Acciones con confirmación]
+[Agente ReAct (LangChain.js)] --> [Balanceador de modelos]
+[Acciones con confirmación] --> [Core logístico y tracking] : ejecuta al confirmar
+[Balanceador de modelos] ..> g : <<HTTPS>>
+[Balanceador de modelos] ..> q : <<HTTPS>>
+[Balanceador de modelos] ..> c : <<HTTPS>>
+[Balanceador de modelos] ..> o : <<HTTPS>>
+[Core logístico y tracking] ..> [paquetes, viajes, seguimiento] : <<SQL>>
+[Agente ReAct (LangChain.js)] ..> [paquetes, viajes, seguimiento] : <<solo lectura>>
+[Historial y auditoría] ..> [ai_conversations, ai_messages]
+[Historial y auditoría] ..> [ai_chat_audit]
+@enduml

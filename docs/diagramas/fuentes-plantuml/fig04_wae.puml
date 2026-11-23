@@ -1,0 +1,58 @@
+@startuml
+!pragma layout smetana
+title Modelo WAE UML (aplicación web con asistente de IA)
+skinparam classAttributeIconSize 0
+hide empty members
+
+class "LogisticaSPA" as spa <<Client Page>> {
+  + renderPorRol()
+  + activarModoIA()
+}
+class "RegistrarEvento" as form <<Form>> {
+  + package_id: string
+  + status: string
+  + ciudad / lat / lng
+  + onSubmit()
+}
+class "AsistenteChat" as chat <<Client Component>> {
+  + mensajes: array
+  + enviar(texto)
+  + confirmarPropuesta()
+  + hablar()
+}
+class "API REST (Express 5)" as api <<Server Page>> {
+  + /api/tracking
+  + /api/ai-agent/chat/stream
+  + /api/ai-agent/actions/:id/confirm
+  + /api/ai-agent/conversations
+}
+class "Agente ReAct (LangChain.js)" as agente <<Server Component>> {
+  + elegirHerramientas(intención)
+  + invocar(mensaje)
+  + proponerAcción()
+}
+class "Balanceador de modelos" as pool <<Server Component>> {
+  + elegirModelo()
+  + marcarEnfriamiento()
+}
+class "Historial y auditoría" as hist <<Server Component>> {
+  + guardarMensajes()
+  + registrarMétricas()
+}
+class "Supabase DB" as db <<Database>> {
+  transport_routes, packages, tracking_logs
+  ai_conversations, ai_messages, ai_chat_audit
+}
+
+spa ..> api : <<link>>
+api ..> spa : <<build>>
+form ..> api : <<submit>>
+api ..> chat : <<build>>
+chat ..> api : <<submit>> (respuesta en vivo)
+api ..> agente : <<delegates>>
+agente ..> pool : <<uses>>
+agente ..> db : <<tools>> (solo lectura)
+api ..> hist : <<delegates>>
+hist ..> db : <<writes>>
+api ..> db : <<queries>>
+@enduml

@@ -1,0 +1,152 @@
+@startuml
+!pragma layout smetana
+title Modelo Relacional (ER) de la Base de Datos - esquema public de Supabase
+hide circle
+skinparam linetype ortho
+skinparam defaultFontName SansSerif
+skinparam entity {
+  BackgroundColor #F3EEFF
+  BorderColor #7E57C2
+}
+
+entity "auth.users\n(Supabase Auth)" as au {
+  * id : uuid <<PK>>
+}
+entity "profiles" as pr {
+  * id : uuid <<PK, FK>>
+  --
+  full_name, email : text
+  role : text
+}
+entity "drivers" as dr {
+  * id : uuid <<PK, FK>>
+  --
+  license_number, phone : text
+  current_vehicle_id : uuid <<FK>>
+  status : text
+}
+entity "vehicles" as ve {
+  * id : uuid <<PK>>
+  --
+  plate, model, brand, type : text
+  capacity_kg : numeric
+  status : text
+}
+entity "predefined_routes" as prt {
+  * id : uuid <<PK>>
+  --
+  name, origin_city, destination_city : text
+  estimated_km : numeric
+}
+entity "schedules" as sc {
+  * id : uuid <<PK>>
+  --
+  predefined_route_id : uuid <<FK>>
+  driver_id : uuid <<FK>>
+  vehicle_id : uuid <<FK>>
+  day_times : jsonb
+}
+entity "transport_routes" as tr {
+  * id : uuid <<PK>>
+  --
+  driver_id : uuid <<FK>>
+  vehicle_id : uuid <<FK>>
+  schedule_id : uuid <<FK>>
+  origin, destination : text
+  departure_time, arrival_time : timestamptz
+  status : text
+}
+entity "route_checkpoints" as rc {
+  * id : uuid <<PK>>
+  --
+  route_id : uuid <<FK>>
+  name : text
+  lat, lng, radius_meters
+  sequence_order : int
+}
+entity "driver_trips" as dt {
+  * id : uuid <<PK>>
+  --
+  driver_id, route_id : uuid <<FK>>
+  started_at, ended_at : timestamptz
+  status : text
+  ping_count : int
+}
+entity "packages" as pk {
+  * id : uuid <<PK>>
+  --
+  sender_id : uuid <<FK>>
+  route_id : uuid <<FK>>
+  tracking_code : text
+  origen, destino : text
+  peso : numeric
+  recipient_name, sender_name : text
+  status : text
+  delivered_at : timestamptz
+}
+entity "tracking_logs" as tl {
+  * id : uuid <<PK>>
+  --
+  package_id : uuid <<FK>>
+  trip_id : uuid <<FK>>
+  recorded_by : uuid <<FK>>
+  lat, lng : numeric
+  status, observations : text
+  timestamp : timestamptz
+}
+entity "checkpoint_visits" as cv {
+  * id : uuid <<PK>>
+  --
+  checkpoint_id, tracking_log_id, trip_id : uuid <<FK>>
+  within_radius : boolean
+  distance_meters : float
+}
+entity "ai_conversations" as ac {
+  * id : uuid <<PK>>
+  --
+  user_id : uuid <<FK>>
+  title : text
+  updated_at : timestamptz
+}
+entity "ai_messages" as am {
+  * id : uuid <<PK>>
+  --
+  conversation_id : uuid <<FK>>
+  role : text (user | assistant)
+  content : text
+  attachments : jsonb
+  is_error : boolean
+}
+entity "ai_chat_audit" as aa {
+  * id : uuid <<PK>>
+  --
+  user_id, conversation_id : uuid <<FK>>
+  user_role, model : text
+  tools : text[]
+  steps, tokens, latency_ms : int
+  fast_path, streamed, voice : boolean
+  status : text (ok | error)
+}
+
+au ||--o| pr
+au ||--o| dr
+ve ||--o{ dr : vehículo actual
+prt ||--o{ sc
+dr ||--o{ sc
+ve ||--o{ sc
+sc ||--o{ tr : genera
+dr ||--o{ tr : conduce
+ve ||--o{ tr : usa
+tr ||--o{ rc : tiene
+tr ||--o{ dt
+tr ||--o{ pk : transporta
+au ||--o{ pk : remitente
+pk ||--o{ tl : historial
+dt ||--o{ tl
+rc ||--o{ cv
+tl ||--o{ cv
+au ||--o{ ac : IA
+ac ||--o{ am : contiene
+ac ||--o{ aa : mide
+au ||--o{ aa
+@enduml

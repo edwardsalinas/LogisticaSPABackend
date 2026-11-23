@@ -1,0 +1,53 @@
+@startuml
+title Diagrama de Secuencia: consulta al asistente de IA y acción con confirmación
+skinparam maxMessageSize 220
+skinparam sequenceMessageAlign left
+
+actor Usuario
+participant "SPA (React)" as SPA
+participant "Controlador\ndel asistente" as C
+participant "Selector de intención\ny caché" as I
+participant "Agente ReAct\n(LangChain.js)" as A
+participant "Balanceador\nde modelos" as B
+participant "Proveedor de IA\n(Gemini, Groq,\nCerebras, OpenRouter)" as L
+database "Supabase\n(PostgreSQL)" as DB
+
+Usuario -> SPA: "¿Dónde está mi paquete TRK-…?"
+SPA -> C: POST /api/ai-agent/chat/stream {mensaje} + JWT
+C -> C: valida sesión, rol y límite de mensajes
+C --> SPA: evento status ("Consultando…")
+C -> I: elige las herramientas según la intención
+
+alt consulta directa (código TRK, resumen del día, mis paquetes)
+  I -> DB: consulta de solo lectura según el rol (caché 45 s)
+  DB --> I: datos
+  I -> B: pide un modelo para redactar la respuesta con esos datos (1 sola llamada)
+  B -> L: invoca
+  L --> I: texto de la respuesta
+  I --> C: respuesta lista
+else conversación general
+  C -> A: mensaje + herramientas permitidas al rol
+  loop hasta tener la respuesta
+    A -> B: pide un modelo
+    B -> L: invoca (respeta los límites; ante error pasa a otro proveedor)
+    L --> A: texto o llamada a una herramienta
+    A -> DB: ejecuta la herramienta (solo lectura)
+    DB --> A: datos
+  end
+end
+
+C --> SPA: eventos token (texto en vivo) y final (tarjetas y propuestas)
+C -> DB: guarda los mensajes (ai_messages) y las métricas (ai_chat_audit)
+SPA --> Usuario: muestra el texto y la tarjeta
+
+== Acción que exige confirmación ==
+Usuario -> SPA: "Crea un paquete de La Paz a Oruro de 3 kg para …"
+SPA -> C: POST /api/ai-agent/chat/stream
+C --> SPA: final con una propuesta ("Requiere tu confirmación"); todavía no se crea nada
+Usuario -> SPA: pulsa «Confirmar» en la tarjeta
+SPA -> C: POST /api/ai-agent/actions/:id/confirm
+C -> C: verifica dueño, rol, vigencia y que no se haya ejecutado antes
+C -> DB: crea el paquete
+C --> SPA: resultado de la acción
+SPA --> Usuario: muestra la confirmación
+@enduml
