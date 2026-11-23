@@ -200,5 +200,5 @@ export const processChatMessage = async (message, { user, history = [], voice = 
   );
 
   const lastMessage = result.messages[result.messages.length - 1];
-  return { text: contentToText(lastMessage.content), attachments: extractAttachments(result.messages), model: member.id.includes(':') ? member.id : `${member.id}:${member.model}` };
+  return { text: contentToText(lastMessage.content).trim(), attachments: extractAttachments(result.messages), model: member.id.includes(':') ? member.id : `${member.id}:${member.model}` };
 };

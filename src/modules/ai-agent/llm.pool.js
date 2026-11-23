@@ -20,7 +20,15 @@ export const POOL_PROVIDERS = {
   gemini: { baseURL: undefined, model: 'gemini-flash-lite-latest', keyVars: ['GEMINI_API_KEY', 'GOOGLE_API_KEY', 'LLM_API_KEY'], rpm: 15 },
   // Groq limita por MODELO (plan gratuito: 8 000 tokens/min y 1 000 peticiones/día cada uno): varios modelos suman capacidad
   groq: { baseURL: 'https://api.groq.com/openai/v1', model: 'openai/gpt-oss-120b', models: ['openai/gpt-oss-120b', 'openai/gpt-oss-20b'], keyVars: ['GROQ_API_KEY'], rpm: 30, tpm: 8000 },
-  cerebras: { baseURL: 'https://api.cerebras.ai/v1', model: 'llama-3.3-70b', keyVars: ['CEREBRAS_API_KEY'], rpm: 30 },
+  // Cerebras: los límites gratuitos cambian mucho de un modelo a otro (verificado el 22-nov-2026 con los encabezados de la API)
+  cerebras: {
+    baseURL: 'https://api.cerebras.ai/v1',
+    model: 'qwen-3.8-27b',
+    models: ['qwen-3.8-27b', 'gpt-oss-120b'],
+    keyVars: ['CEREBRAS_API_KEY'],
+    rpm: 30,
+    limits: { 'qwen-3.8-27b': { rpm: 450, tpm: 150000 }, 'gpt-oss-120b': { rpm: 5, tpm: 30000 } },
+  },
   openrouter: { baseURL: 'https://openrouter.ai/api/v1', model: 'meta-llama/llama-3.3-70b-instruct:free', keyVars: ['OPENROUTER_API_KEY'], rpm: 15 },
   qwen: { baseURL: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1', model: 'qwen-plus', keyVars: ['DASHSCOPE_API_KEY', 'LLM_API_KEY'], rpm: 30 },
   openai: { baseURL: undefined, model: 'gpt-4o-mini', keyVars: ['OPENAI_API_KEY', 'LLM_API_KEY'], rpm: 30 },
@@ -61,8 +69,9 @@ export const resolvePool = (env = process.env) => {
         model,
         baseURL: env[`${upper}_BASE_URL`] || (name === requested && env.LLM_BASE_URL) || spec.baseURL,
         apiKey,
-        rpm: num(env[`${upper}_RPM`], spec.rpm),
-        tpm: num(env[`${upper}_TPM`], spec.tpm), // undefined = sin tope conocido de tokens por minuto
+        // límites por modelo (spec.limits) y, si el .env los fija, tienen prioridad
+        rpm: num(env[`${upper}_RPM`], spec.limits?.[model]?.rpm ?? spec.rpm),
+        tpm: num(env[`${upper}_TPM`], spec.limits?.[model]?.tpm ?? spec.tpm), // undefined = sin tope conocido de tokens/min
         temperature: name === 'gemini' ? undefined : num(env.LLM_TEMPERATURE, 0),
       });
     }

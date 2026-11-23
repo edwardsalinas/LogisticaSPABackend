@@ -238,3 +238,24 @@ test('pasado el minuto, los tokens se liberan y el modelo vuelve a recibir consu
   c.tick(61_000);
   assert.equal(pool.status()[0].tokens_last_minute, 0);
 });
+
+test('Cerebras entra con sus dos modelos y cada uno con su propio límite', () => {
+  const { entries: e } = resolvePool({ LLM_POOL: 'cerebras', CEREBRAS_API_KEY: 'c' });
+  const q = e.find((x) => x.model === 'qwen-3.8-27b');
+  const g = e.find((x) => x.model === 'gpt-oss-120b');
+  assert.equal(q.rpm, 450);
+  assert.equal(q.tpm, 150000);
+  assert.equal(g.rpm, 5);
+  assert.equal(g.tpm, 30000);
+});
+
+test('un modelo con más capacidad recibe proporcionalmente más consultas', async () => {
+  const c = clock();
+  const list = [{ id: 'grande', provider: 'x', model: 'm', rpm: 450, tpm: 150000 }, { id: 'chico', provider: 'x', model: 'm', rpm: 5, tpm: 30000 }];
+  const pool = new LLMPool(list, { build: () => ({}), now: c.now });
+  const used = { grande: 0, chico: 0 };
+  for (let i = 0; i < 30; i += 1) { const { member } = await pool.run(async () => 'ok', { tokensOf: () => 2000 }); used[member.id] += 1; c.tick(1000); }
+  assert.ok(used.chico <= 4, `el de 5 rpm no debe pasar de su límite: ${JSON.stringify(used)}`);
+  assert.ok(used.grande >= 26, JSON.stringify(used));
+});
+
