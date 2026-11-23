@@ -295,3 +295,10 @@ test('cuenta cada llamada al modelo (no cada consulta) contra el límite por min
   assert.ok(pool.status().every((s) => s.requests_last_minute <= 13), JSON.stringify(pool.status().map((s) => s.requests_last_minute)));
 });
 
+test('gpt-oss usa razonamiento bajo por defecto (primer texto más rápido) y se puede cambiar', () => {
+  const { entries: e } = resolvePool({ LLM_POOL: 'cerebras,groq', CEREBRAS_API_KEY: 'c', GROQ_API_KEY: 'q' });
+  assert.equal(e.find((x) => x.model === 'gpt-oss-120b').reasoningEffort, 'low');
+  assert.equal(e.find((x) => x.model === 'qwen-3.8-27b').reasoningEffort, undefined);
+  const high = resolvePool({ LLM_POOL: 'groq', GROQ_API_KEY: 'q', GROQ_REASONING_EFFORT: 'high' }).entries;
+  assert.ok(high.every((x) => x.reasoningEffort === 'high'));
+});

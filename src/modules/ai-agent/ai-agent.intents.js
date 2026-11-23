@@ -72,3 +72,41 @@ export const selectToolNames = (allowed, message, history = []) => {
   const subset = allowed.filter((name) => wanted.has(name));
   return subset.length ? subset : allowed;
 };
+
+// ============================================================ atajo: preguntas inequívocas sin la llamada de "decidir"
+/**
+ * Un agente normal hace dos llamadas al modelo: la primera solo para decidir qué herramienta usar, la segunda para
+ * redactar la respuesta. Cuando la pregunta es inequívoca (un código de paquete, "resumen del día", "mis paquetes")
+ * la herramienta se puede ejecutar directamente y basta UNA llamada al modelo para redactar: la mitad de tokens y
+ * el primer texto llega mucho antes. Es deliberadamente conservador: ante cualquier duda (varios temas, una acción,
+ * un seguimiento sin código) devuelve null y se usa el agente completo.
+ *
+ * @returns {{ tool: string, args: object } | null}
+ */
+export const fastPlanFor = (allowed, message) => {
+  const text = String(message ?? '');
+  if (text.length > 220) return null;
+  const t = normalize(text);
+  const intents = intentsOf(text);
+  const has = (name) => allowed.includes(name);
+  const without = (...bad) => !bad.some((b) => intents.includes(b));
+
+  // 1) Un código de rastreo: ubicar ese paquete
+  const code = text.match(/\bTRK-[A-Za-z0-9-]{3,}\b/i)?.[0];
+  if (code && has('get_package_tracking') && without('actions', 'fleet', 'analytics', 'ops')) {
+    return { tool: 'get_package_tracking', args: { code: code.toUpperCase() } };
+  }
+
+  // 2) "Cómo va el día / la operación" (personal)
+  if (has('get_daily_briefing') && !code && without('actions', 'lookup', 'fleet', 'analytics')
+      && /\b(resumen del dia|como va (la operacion|el dia|hoy)|por donde empiezo|que (tengo que )?atender|que hay para hoy)\b/.test(t)) {
+    return { tool: 'get_daily_briefing', args: {} };
+  }
+
+  // 3) "¿Qué paquetes tengo?" sin más
+  if (has('list_my_packages') && !code && without('actions', 'ops', 'fleet', 'analytics', 'trips')
+      && /\b(que paquetes tengo|mis paquetes|cuales son mis paquetes|que envios tengo|mis envios)\b/.test(t)) {
+    return { tool: 'list_my_packages', args: {} };
+  }
+  return null;
+};

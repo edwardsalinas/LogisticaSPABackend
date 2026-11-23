@@ -85,6 +85,9 @@ export const resolvePool = (env = process.env) => {
         tpm: num(env[`${upper}_TPM`], spec.limits?.[model]?.tpm ?? spec.tpm), // undefined = sin tope conocido de tokens/min
         // un proveedor de respaldo solo se usa cuando los principales no pueden (<PROVEEDOR>_BACKUP=false lo vuelve normal)
         backup: env[`${upper}_BACKUP`] !== undefined ? env[`${upper}_BACKUP`] === 'true' : !!spec.backup,
+        // gpt-oss "razona" antes de contestar: con esfuerzo bajo el primer texto llega mucho antes y para consultar
+        // datos logísticos no hace falta pensar más (<PROVEEDOR>_REASONING_EFFORT=low|medium|high lo cambia)
+        reasoningEffort: env[`${upper}_REASONING_EFFORT`] || (/gpt-oss/i.test(model) ? 'low' : undefined),
         temperature: name === 'gemini' ? undefined : num(env.LLM_TEMPERATURE, 0),
       });
     }

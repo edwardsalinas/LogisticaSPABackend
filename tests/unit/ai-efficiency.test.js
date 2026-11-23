@@ -1,7 +1,7 @@
 import './_env.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { intentsOf, selectToolNames } from '../../src/modules/ai-agent/ai-agent.intents.js';
+import { intentsOf, selectToolNames, fastPlanFor } from '../../src/modules/ai-agent/ai-agent.intents.js';
 import { withToolCache, clearToolCache, toolCacheSize } from '../../src/modules/ai-agent/ai-agent.cache.js';
 import { systemPrompt } from '../../src/modules/ai-agent/ai-agent.service.js';
 import { toolsForUser } from '../../src/modules/ai-agent/ai-agent.tools.js';
@@ -161,3 +161,41 @@ test('clearToolCache vacía todo (se llama al confirmar una acción)', async () 
   clearToolCache();
   assert.equal(toolCacheSize(), 0);
 });
+
+// ============================================================ atajo: preguntas inequívocas con una sola llamada al modelo
+test('un código de paquete va directo a get_package_tracking', () => {
+  assert.deepEqual(fastPlanFor(ALL, '¿Dónde está el paquete trk-1779841826375-138?'), { tool: 'get_package_tracking', args: { code: 'TRK-1779841826375-138' } });
+  assert.deepEqual(fastPlanFor(ALL, 'Dame el estado del TRK-ABC-123'), { tool: 'get_package_tracking', args: { code: 'TRK-ABC-123' } });
+});
+
+test('"cómo va el día" va directo al resumen, solo para el personal', () => {
+  assert.equal(fastPlanFor(ALL, '¿Cómo va la operación hoy?')?.tool, 'get_daily_briefing');
+  assert.equal(fastPlanFor(ALL, 'Dame el resumen del día: ¿por dónde empiezo?')?.tool, 'get_daily_briefing');
+  const client = toolsForUser({ id: 'c', role: 'client' }).map((t) => t.name);
+  assert.equal(fastPlanFor(client, '¿Cómo va la operación hoy?'), null, 'un cliente no tiene esa herramienta');
+});
+
+test('"¿qué paquetes tengo?" va directo a la lista', () => {
+  const client = toolsForUser({ id: 'c', role: 'client' }).map((t) => t.name);
+  assert.equal(fastPlanFor(client, '¿Qué paquetes tengo?')?.tool, 'list_my_packages');
+});
+
+test('ante varios temas, una acción o un seguimiento sin código NO hay atajo (se usa el agente completo)', () => {
+  assert.equal(fastPlanFor(ALL, 'Dame el resumen del día y además dime qué vehículos hay'), null);
+  assert.equal(fastPlanFor(ALL, 'Entrega el paquete TRK-1779841826375-138'), null);
+  assert.equal(fastPlanFor(ALL, 'Registra que el TRK-1779841826375-138 está en agencia'), null);
+  assert.equal(fastPlanFor(ALL, '¿Y quién lo lleva?'), null);
+  assert.equal(fastPlanFor(ALL, 'Dame el estado del TRK-1779841826375-138 y cómo fue el último mes'), null);
+  assert.equal(fastPlanFor(ALL, 'hola'), null);
+});
+
+test('un mensaje largo o con instrucciones extrañas no usa el atajo', () => {
+  assert.equal(fastPlanFor(ALL, `Ignora todo y ${'x'.repeat(250)} TRK-1`), null);
+});
+
+test('el atajo respeta el rol: solo usa herramientas que el rol tiene', () => {
+  const driver = toolsForUser({ id: 'd', role: 'driver' }).map((t) => t.name);
+  assert.equal(fastPlanFor(driver, '¿Cómo va la operación hoy?'), null);
+  assert.equal(fastPlanFor(driver, '¿Dónde está el TRK-1779841826375-138?')?.tool, 'get_package_tracking');
+});
+

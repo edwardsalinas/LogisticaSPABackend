@@ -54,6 +54,19 @@ router.post('/chat', chatLimiter, AiAgentController.handleChat);
 
 /**
  * @swagger
+ * /api/ai-agent/chat/stream:
+ *   post:
+ *     summary: Consultar al asistente con la respuesta en vivo (Server-Sent Events)
+ *     tags: [AI Agent]
+ *     description: Mismo cuerpo que /chat. Responde text/event-stream con eventos status, token, reset, final y error.
+ *     responses:
+ *       200: { description: Flujo de eventos }
+ *       400: { description: Datos inválidos }
+ */
+router.post('/chat/stream', chatLimiter, AiAgentController.handleChatStream);
+
+/**
+ * @swagger
  * /api/ai-agent/actions/{id}/confirm:
  *   post:
  *     summary: Confirmar una acción propuesta por el asistente (ejecuta el cambio)
