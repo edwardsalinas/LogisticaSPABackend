@@ -127,7 +127,7 @@ export class LLMPool {
     this.strategy = strategy;
     this.timeoutMs = timeoutMs;
     this.maxAttempts = maxAttempts;
-    this.members = entries.map((e) => ({ ...e, model_instance: null, inFlight: 0, stamps: [], tokenStamps: [], avgTokens: 0, cooldownUntil: 0, cooldownReason: null, ewmaMs: 0, lastUsed: 0, ok: 0, failed: 0, lastError: null }));
+    this.members = entries.map((e) => ({ ...e, model_instance: null, inFlight: 0, stamps: [], tokenStamps: [], avgTokens: 0, avgCalls: 1, cooldownUntil: 0, cooldownReason: null, ewmaMs: 0, lastUsed: 0, ok: 0, failed: 0, lastError: null }));
   }
 
   get size() { return this.members.length; }
@@ -158,7 +158,8 @@ export class LLMPool {
     if (ready.length === 0) return null;
 
     // Preferir a los que aún tienen margen dentro de su límite por minuto (se deja 10 % de holgura)
-    const withRoom = ready.filter((m) => this.#recent(m) < Math.max(1, Math.floor(m.rpm * 0.9)) && this.#hasTokenRoom(m));
+    // Los proveedores cuentan cada LLAMADA al modelo y una consulta del agente hace varias: se reserva ese margen
+    const withRoom = ready.filter((m) => this.#recent(m) + (m.avgCalls || 1) <= Math.max(1, Math.floor(m.rpm * 0.9)) && this.#hasTokenRoom(m));
     // Los de respaldo solo entran si no queda ningún principal con margen
     const primary = withRoom.filter((m) => !m.backup);
     const pool = primary.length ? primary : withRoom.length ? withRoom : ready;
@@ -181,10 +182,11 @@ export class LLMPool {
   /**
    * Ejecuta `fn(model, member)` en el mejor modelo; si falla de forma recuperable lo reintenta en otro.
    * `canRetry()` permite abortar el reintento (p. ej. si la consulta ya tuvo efectos que no deben repetirse).
-   * `tokensOf(result)` informa cuántos tokens gastó la consulta, para respetar el tope por minuto de cada modelo.
+   * `tokensOf(result)` informa cuántos tokens gastó la consulta y `callsOf(result)` cuántas llamadas hizo al modelo,
+   * para respetar los topes por minuto (los proveedores cuentan cada llamada, no cada consulta).
    * Devuelve { result, member, attempts }.
    */
-  async run(fn, { canRetry = () => true, tokensOf = () => 0 } = {}) {
+  async run(fn, { canRetry = () => true, tokensOf = () => 0, callsOf = () => 1 } = {}) {
     const tried = new Set();
     let lastError;
     for (let attempt = 1; attempt <= Math.min(this.maxAttempts, this.size); attempt += 1) {
@@ -202,6 +204,9 @@ export class LLMPool {
         m.ewmaMs = m.ewmaMs ? m.ewmaMs * 0.7 + took * 0.3 : took;
         m.ok += 1;
         m.lastError = null;
+        const calls = Math.max(1, Number(callsOf(result)) || 1);
+        for (let i = 1; i < calls; i += 1) m.stamps.push(this.now()); // la primera ya se contó al empezar
+        m.avgCalls = m.avgCalls && m.ok > 1 ? m.avgCalls * 0.7 + calls * 0.3 : calls;
         const used = Number(tokensOf(result)) || 0;
         if (used > 0) {
           m.tokenStamps.push({ t: this.now(), n: used });

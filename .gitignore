@@ -33,3 +33,6 @@ credenciales.local.txt
 
 # Supabase CLI (estado local del enlace con el proyecto)
 supabase/
+
+# Detalle de las evaluaciones del asistente (se regenera con npm run ai:eval)
+tests/ai-evals/results/

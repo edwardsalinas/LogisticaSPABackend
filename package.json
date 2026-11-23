@@ -10,6 +10,7 @@
     "seed": "node --env-file=.env src/shared/utils/seed.js",
     "test:flow": "node --env-file=.env tests/integration/full-flow.test.js",
     "test": "node --test \"tests/unit/*.test.js\"",
+    "ai:eval": "node --env-file=.env scripts/ai-eval.mjs",
     "prepare": "husky"
   },
   "keywords": [],

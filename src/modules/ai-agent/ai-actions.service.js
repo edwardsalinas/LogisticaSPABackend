@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { clearToolCache } from './ai-agent.cache.js';
 
 /**
  * Acciones del asistente CON CONFIRMACIÓN.
@@ -72,6 +73,7 @@ export const confirmProposal = async (id, user, executors, now = Date.now()) => 
   try {
     const result = await executors[p.type](p.params, user);
     p.status = 'done';
+    clearToolCache(); // los resúmenes en caché ya no reflejan lo que acaba de cambiar
     console.info(`[AI Action] ${p.type} confirmada por ${user.id} (${user.role})`);
     return { message: result.message, data: result.data ?? null };
   } catch (error) {

@@ -285,3 +285,13 @@ test('si el principal cae o se llena, el respaldo atiende', async () => {
   assert.equal((await pool.run(async () => 'ok')).member.id, 'respaldo');
 });
 
+test('cuenta cada llamada al modelo (no cada consulta) contra el límite por minuto', async () => {
+  const c = clock();
+  const pool = new LLMPool([{ id: 'g', provider: 'x', model: 'm', rpm: 15 }, { id: 'otro', provider: 'x', model: 'm', rpm: 15 }], { build: () => ({}), now: c.now });
+  // cada consulta hace 3 llamadas: con 15 rpm solo caben ~4 consultas por minuto en cada uno
+  const used = { g: 0, otro: 0 };
+  for (let i = 0; i < 8; i += 1) { const { member } = await pool.run(async () => 'ok', { callsOf: () => 3 }); used[member.id] += 1; c.tick(500); }
+  assert.ok(used.g <= 4 && used.otro <= 4, JSON.stringify(used));
+  assert.ok(pool.status().every((s) => s.requests_last_minute <= 13), JSON.stringify(pool.status().map((s) => s.requests_last_minute)));
+});
+
