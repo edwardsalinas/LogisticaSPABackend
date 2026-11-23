@@ -323,3 +323,51 @@ test('la migración 022 completa las tablas antiguas (con "metadata") sin borrar
   }
 });
 
+// ============================================================ regresiones encontradas en producción
+test('REGRESIÓN: guardar un turno nuevo cumple NOT NULL y claves foráneas (la pregunta lleva attachments e is_error)', async () => {
+  const db = memDb();
+  const convo = await resolveConversation(db, ANA);
+  assert.equal(await saveTurn(db, ANA, convo, { question: '¿Dónde está?', answer: { text: 'ok', attachments: [] } }), true);
+  for (const m of db.tables.ai_messages) {
+    assert.ok(Array.isArray(m.attachments), `${m.role} sin attachments`);
+    assert.equal(typeof m.is_error, 'boolean', `${m.role} sin is_error`);
+  }
+});
+
+test('REGRESIÓN: la base en memoria rechaza lo que PostgreSQL rechazaría', async () => {
+  const db = memDb();
+  const { error } = await db.from('ai_messages').insert([{ conversation_id: 'x', role: 'user', content: 'a' }, { conversation_id: 'x', role: 'assistant', content: 'b', attachments: [] }]);
+  assert.ok(error, 'una conversación inexistente o un NULL deben fallar');
+  const audit = await db.from('ai_chat_audit').insert({ status: 'ok', conversation_id: '00000000-0000-4000-8000-00000000ffff' });
+  assert.match(audit.error.message, /foreign key/);
+});
+
+test('REGRESIÓN: la auditoría se guarda después de la conversación y la referencia', async () => {
+  const db = memDb();
+  controller._useDb(db);
+  const convo = await resolveConversation(db, ANA);
+  await controller.afterAnswer({
+    req: { user: ANA }, body: { message: 'hola', voice: false }, convo,
+    out: { text: 'ok', attachments: [], model: 'm:x', trace: { tools: [{ name: 'a' }], steps: 1, tokens: 10 } },
+    started: Date.now(), streamed: true,
+  });
+  assert.equal(db.tables.ai_conversations.length, 1);
+  assert.equal(db.tables.ai_messages.length, 2);
+  assert.equal(db.tables.ai_chat_audit.length, 1, 'la métrica se registró');
+  assert.equal(db.tables.ai_chat_audit[0].conversation_id, convo.id);
+  controller._useDb();
+});
+
+test('si no se pudo guardar la conversación, la métrica se registra igual pero sin referenciarla', async () => {
+  const db = memDb();
+  db.failOn('ai_messages');
+  controller._useDb(db);
+  const errors = console.error;
+  console.error = () => {};
+  try {
+    const convo = await resolveConversation(db, ANA);
+    await controller.afterAnswer({ req: { user: ANA }, body: { message: 'x' }, convo, out: { text: 'ok', attachments: [], trace: { tools: [], steps: 1, tokens: 5 } }, started: Date.now(), streamed: false });
+  } finally { console.error = errors; controller._useDb(); }
+  assert.equal(db.tables.ai_chat_audit.length, 1);
+  assert.equal(db.tables.ai_chat_audit[0].conversation_id, null);
+});

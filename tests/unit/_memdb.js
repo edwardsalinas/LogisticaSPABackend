@@ -26,11 +26,31 @@ export const memDb = (initial = {}) => {
     };
     const copy = (v) => JSON.parse(JSON.stringify(v));
 
+    // Restricciones de la migración 022 (para que las pruebas fallen como fallaría PostgreSQL)
+    const NOT_NULL = { ai_messages: ['conversation_id', 'role', 'content', 'attachments', 'is_error'], ai_conversations: ['user_id', 'title'], ai_chat_audit: ['status'] };
+    const FOREIGN = { ai_messages: { conversation_id: 'ai_conversations' }, ai_chat_audit: { conversation_id: 'ai_conversations' } };
+    const violation = (row) => {
+      for (const col of NOT_NULL[name] ?? []) if (row[col] === undefined || row[col] === null) return new Error(`null value in column "${col}" of relation "${name}" violates not-null constraint`);
+      for (const [col, parent] of Object.entries(FOREIGN[name] ?? {})) {
+        if (row[col] != null && !(tables[parent] ?? []).some((p) => p.id === row[col])) return new Error(`insert or update on table "${name}" violates foreign key constraint on ${col}`);
+      }
+      return null;
+    };
+
     const exec = () => {
       if (failures.has(name)) return { data: null, error: new Error(`fallo simulado en ${name}`) };
       if (q.op === 'insert') {
         const list = Array.isArray(q.payload) ? q.payload : [q.payload];
-        const inserted = list.map((p) => ({ id: fakeUuid(), created_at: new Date().toISOString(), ...copy(p) }));
+        // como PostgREST en un insert múltiple: lo que falta en una fila se envía como NULL (no se aplica el DEFAULT)
+        const keys = [...new Set(list.flatMap((p) => Object.keys(p)))];
+        const defaults = { attachments: [], is_error: false, tools: [], fast_path: false, streamed: false, voice: false };
+        const inserted = list.map((p) => {
+          const row = { id: fakeUuid(), created_at: new Date().toISOString(), ...copy(p) };
+          if (list.length === 1) for (const [k, v] of Object.entries(defaults)) if (NOT_NULL[name]?.includes(k) && row[k] === undefined) row[k] = v;
+          for (const k of keys) if (row[k] === undefined) row[k] = null;
+          return row;
+        });
+        for (const row of inserted) { const bad = violation(row); if (bad) return { data: null, error: bad }; }
         rows().push(...inserted);
         return { data: q.returning ? copy(inserted) : null, error: null };
       }

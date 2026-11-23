@@ -38,27 +38,27 @@ export const chatSchema = z.object({
 });
 
 /** Lo que se guarda tras una consulta: la conversación y la métrica de auditoría (nunca rompen la respuesta). */
-const afterAnswer = ({ req, body, convo, out, started, streamed }) =>
-  Promise.all([
-    saveTurn(db, req.user, convo, { question: body.message, answer: { text: out.text, attachments: out.attachments } }),
-    recordChat(db, {
-      userId: req.user?.id,
-      role: req.user?.role,
-      conversationId: convo.id,
-      model: out.model,
-      tools: [...new Set((out.trace?.tools ?? []).map((t) => t.name))],
-      steps: out.trace?.steps,
-      tokens: out.trace?.tokens,
-      latencyMs: Date.now() - started,
-      fastPath: out.trace?.fast,
-      streamed,
-      voice: body.voice,
-      status: 'ok',
-    }),
-  ]);
+export const afterAnswer = async ({ req, body, convo, out, started, streamed }) => {
+  // Primero la conversación: la métrica la referencia por clave foránea. Si no se pudo guardar, la métrica queda sin ella.
+  const saved = await saveTurn(db, req.user, convo, { question: body.message, answer: { text: out.text, attachments: out.attachments } });
+  await recordChat(db, {
+    userId: req.user?.id,
+    role: req.user?.role,
+    conversationId: saved ? convo.id : null,
+    model: out.model,
+    tools: [...new Set((out.trace?.tools ?? []).map((t) => t.name))],
+    steps: out.trace?.steps,
+    tokens: out.trace?.tokens,
+    latencyMs: Date.now() - started,
+    fastPath: out.trace?.fast,
+    streamed,
+    voice: body.voice,
+    status: 'ok',
+  });
+};
 
 const auditFailure = ({ req, body, convo, started, streamed, status }) =>
-  recordChat(db, { userId: req.user?.id, role: req.user?.role, conversationId: convo?.id, latencyMs: Date.now() - started, streamed, voice: body?.voice, status: 'error', errorStatus: status });
+  recordChat(db, { userId: req.user?.id, role: req.user?.role, conversationId: null, latencyMs: Date.now() - started, streamed, voice: body?.voice, status: 'error', errorStatus: status });
 
 export const handleChat = async (req, res) => {
   const started = Date.now();

@@ -54,7 +54,8 @@ export const saveTurn = async (db, user, convo, { question, answer }) => {
     const clip = (s) => String(s ?? '').slice(0, MAX_CONTENT);
     const base = nextStamp();
     const { error } = await db.from('ai_messages').insert([
-      { conversation_id: convo.id, role: 'user', content: clip(question), created_at: new Date(base).toISOString() },
+      // las dos filas llevan las mismas columnas: en un insert múltiple PostgREST pone NULL en las que faltan y rompería NOT NULL
+      { conversation_id: convo.id, role: 'user', content: clip(question), attachments: [], is_error: false, created_at: new Date(base).toISOString() },
       {
         conversation_id: convo.id,
         role: 'assistant',
