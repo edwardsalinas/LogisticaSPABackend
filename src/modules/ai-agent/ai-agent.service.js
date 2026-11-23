@@ -2,6 +2,7 @@ import { ChatOpenAI } from "@langchain/openai";
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { createReactAgent } from "@langchain/langgraph/prebuilt";
 import { toolsForUser, extractAttachments } from './ai-agent.tools.js';
+import { LLMPool, resolvePool } from './llm.pool.js';
 
 /**
  * Factory paramétrico para inicializar el LLM. El proveedor se elige con LLM_PROVIDER en el .env.
@@ -58,12 +59,8 @@ export const resolveLLMConfig = (env = process.env) => {
   };
 };
 
-export const getLLM = () => {
-  const config = resolveLLMConfig();
-  if (config.requested !== config.provider) {
-    console.warn(`[AI Agent] Proveedor '${config.requested}' no soportado. Usando ${config.provider}.`);
-  }
-
+/** Crea el cliente de LangChain para una configuración concreta (un miembro del pool o la configuración clásica). */
+export const buildChatModel = (config) => {
   if (config.provider === 'gemini') {
     return new ChatGoogleGenerativeAI({
       model: config.model,
@@ -81,9 +78,31 @@ export const getLLM = () => {
   });
 };
 
+export const getLLM = () => {
+  const config = resolveLLMConfig();
+  if (config.requested !== config.provider) {
+    console.warn(`[AI Agent] Proveedor '${config.requested}' no soportado. Usando ${config.provider}.`);
+  }
+  return buildChatModel(config);
+};
+
 // Inicialización diferida: si falta la API key, solo falla el chat y no el arranque del servidor.
-let llm;
-const getLLMInstance = () => (llm ??= getLLM());
+let pool;
+export const getPool = () => {
+  if (pool) return pool;
+  const { entries, skipped } = resolvePool();
+  for (const s of skipped) console.warn(`[LLM Pool] ${s.provider} no se usa: ${s.reason}.`);
+  // Sin ninguna clave válida se conserva el comportamiento de siempre: el error aparece al consultar, no al arrancar
+  const members = entries.length ? entries : [{ ...resolveLLMConfig(), id: resolveLLMConfig().provider, rpm: 15 }];
+  pool = new LLMPool(members, {
+    build: buildChatModel,
+    strategy: process.env.LLM_STRATEGY === 'speed' ? 'speed' : 'balanced',
+    timeoutMs: Number(process.env.LLM_TIMEOUT_MS) || 30000,
+  });
+  console.info(`[LLM Pool] ${members.map((m) => `${m.id}:${m.model}`).join(', ')} (estrategia ${pool.strategy})`);
+  return pool;
+};
+export const resetPool = () => { pool = undefined; };
 
 const ROLE_HELP = {
   client: 'Ayudas a un cliente a seguir SUS envíos: dónde están, en qué estado, quién los lleva y cuándo llegan.',
@@ -151,22 +170,31 @@ const contentToText = (content) =>
  * @param {{ user: object, history?: {role: 'user'|'assistant', content: string}[] }} context
  */
 export const processChatMessage = async (message, { user, history = [], voice = false } = {}) => {
-  const agentExecutor = createReactAgent({
-    llm: getLLMInstance(),
-    tools: toolsForUser(user || { role: 'client' }),
-  });
+  const tools = toolsForUser(user || { role: 'client' });
 
-  const result = await agentExecutor.invoke(
-    {
-      messages: [
-        { role: 'system', content: systemPrompt(user, { voice }) },
-        ...history.map(({ role, content }) => ({ role, content })),
-        { role: 'user', content: message },
-      ],
-    },
-    { recursionLimit: RECURSION_LIMIT }
+  // Si el modelo ya dejó una propuesta de acción preparada, un reintento en otro modelo podría duplicarla
+  const state = { proposed: false };
+  for (const t of tools) {
+    if (String(t.name).startsWith('propose_') && typeof t.func === 'function') {
+      const original = t.func;
+      t.func = async (...args) => { state.proposed = true; return original.apply(t, args); };
+    }
+  }
+
+  const { result, member } = await getPool().run(
+    (llm) => createReactAgent({ llm, tools }).invoke(
+      {
+        messages: [
+          { role: 'system', content: systemPrompt(user, { voice }) },
+          ...history.map(({ role, content }) => ({ role, content })),
+          { role: 'user', content: message },
+        ],
+      },
+      { recursionLimit: RECURSION_LIMIT }
+    ),
+    { canRetry: () => !state.proposed },
   );
 
   const lastMessage = result.messages[result.messages.length - 1];
-  return { text: contentToText(lastMessage.content), attachments: extractAttachments(result.messages) };
+  return { text: contentToText(lastMessage.content), attachments: extractAttachments(result.messages), model: `${member.id}:${member.model}` };
 };

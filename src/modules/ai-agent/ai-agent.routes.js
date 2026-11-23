@@ -1,10 +1,13 @@
 import { Router } from 'express';
 import * as AiAgentController from './ai-agent.controller.js';
-import { requireAuth } from '../iam/iam.middleware.js';
+import { requireAuth, requireRole } from '../iam/iam.middleware.js';
 import { chatLimiter } from '../../shared/middlewares/rateLimit.js';
 
 const router = Router();
 router.use(requireAuth);
+
+/** Estado del balanceador de modelos (administradores). */
+router.get('/pool', requireRole(['admin']), AiAgentController.handlePoolStatus);
 
 /**
  * @swagger

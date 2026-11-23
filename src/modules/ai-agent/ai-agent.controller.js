@@ -31,8 +31,8 @@ export const chatSchema = z.object({
 export const handleChat = async (req, res) => {
   try {
     const { message, history, voice } = chatSchema.parse(req.body);
-    const { text, attachments } = await AiAgentService.processChatMessage(message, { user: req.user, history, voice });
-    return res.status(200).json({ success: true, response: text, attachments });
+    const { text, attachments, model } = await AiAgentService.processChatMessage(message, { user: req.user, history, voice });
+    return res.status(200).json({ success: true, response: text, attachments, model });
   } catch (error) {
     if (error instanceof z.ZodError) {
       return res.status(400).json({ success: false, errors: error.flatten().fieldErrors });
@@ -74,4 +74,10 @@ export const handleCancelAction = async (req, res) => {
   } catch (error) {
     return actionError(res, error);
   }
+};
+
+/** Estado de los modelos del balanceador (solo administradores): carga, latencia y enfriamientos. Sin claves. */
+export const handlePoolStatus = (_req, res) => {
+  const pool = AiAgentService.getPool();
+  return res.status(200).json({ success: true, data: { strategy: pool.strategy, models: pool.status() } });
 };
