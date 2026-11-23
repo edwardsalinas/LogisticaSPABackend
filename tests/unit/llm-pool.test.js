@@ -17,7 +17,7 @@ test('sin LLM_POOL se comporta como antes: solo el proveedor principal', () => {
 
 test('LLM_POOL arma el pool en orden y solo con los proveedores que tienen clave', () => {
   const { entries: e, skipped } = resolvePool({ LLM_POOL: 'gemini, groq ,cerebras,openrouter,inventado', GEMINI_API_KEY: 'g', GROQ_API_KEY: 'q', OPENROUTER_API_KEY: 'o' });
-  assert.deepEqual(e.map((x) => x.provider), ['gemini', 'groq', 'groq', 'openrouter']); // Groq entra con 2 modelos
+  assert.deepEqual(e.map((x) => x.provider), ['gemini', 'groq', 'groq', 'openrouter', 'openrouter']); // Groq y OpenRouter entran con 2 modelos
   assert.deepEqual(skipped.map((s) => s.provider), ['cerebras', 'inventado']);
   assert.match(skipped[0].reason, /CEREBRAS_API_KEY/);
 });
@@ -257,5 +257,31 @@ test('un modelo con más capacidad recibe proporcionalmente más consultas', asy
   for (let i = 0; i < 30; i += 1) { const { member } = await pool.run(async () => 'ok', { tokensOf: () => 2000 }); used[member.id] += 1; c.tick(1000); }
   assert.ok(used.chico <= 4, `el de 5 rpm no debe pasar de su límite: ${JSON.stringify(used)}`);
   assert.ok(used.grande >= 26, JSON.stringify(used));
+});
+
+test('OpenRouter entra como respaldo, con dos modelos gratuitos', () => {
+  const { entries: e } = resolvePool({ LLM_POOL: 'openrouter', OPENROUTER_API_KEY: 'o' });
+  assert.equal(e.length, 2);
+  assert.ok(e.every((x) => x.backup === true && x.model.endsWith(':free')));
+  assert.equal(resolvePool({ LLM_POOL: 'openrouter', OPENROUTER_API_KEY: 'o', OPENROUTER_BACKUP: 'false' }).entries[0].backup, false);
+});
+
+test('los de respaldo no reciben consultas mientras haya un principal con margen', async () => {
+  const c = clock();
+  const list = [{ id: 'principal', provider: 'x', model: 'm', rpm: 100 }, { id: 'respaldo', provider: 'x', model: 'm', rpm: 100, backup: true }];
+  const pool = new LLMPool(list, { build: () => ({}), now: c.now });
+  const used = { principal: 0, respaldo: 0 };
+  for (let i = 0; i < 20; i += 1) { const { member } = await pool.run(async () => 'ok'); used[member.id] += 1; c.tick(100); }
+  assert.deepEqual(used, { principal: 20, respaldo: 0 });
+});
+
+test('si el principal cae o se llena, el respaldo atiende', async () => {
+  const c = clock();
+  const list = [{ id: 'principal', provider: 'x', model: 'm', rpm: 100 }, { id: 'respaldo', provider: 'x', model: 'm', rpm: 100, backup: true }];
+  const pool = new LLMPool(list, { build: () => ({}), now: c.now });
+  const r = await pool.run(async (_m, mm) => { if (mm.id === 'principal') throw err(503, 'caído'); return 'ok'; });
+  assert.equal(r.member.id, 'respaldo');
+  // mientras el principal descansa, todo va al respaldo
+  assert.equal((await pool.run(async () => 'ok')).member.id, 'respaldo');
 });
 

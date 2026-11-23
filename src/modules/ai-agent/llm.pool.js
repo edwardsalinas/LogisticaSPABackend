@@ -8,6 +8,8 @@
  *   - Velocidad: cada respuesta usa al modelo menos cargado; con proveedores rápidos (Groq, Cerebras) cada
  *     respuesta también es más corta. Con 'speed' se prefiere al que viene respondiendo más rápido.
  *
+ * Los proveedores marcados como respaldo (backup) solo reciben consultas cuando los principales no pueden.
+ *
  * Configuración (.env):
  *   LLM_POOL=gemini,groq,cerebras,openrouter   orden de preferencia; solo se usan los que tienen clave
  *   LLM_STRATEGY=balanced | speed              balanced reparte por carga; speed prefiere al más rápido
@@ -29,7 +31,16 @@ export const POOL_PROVIDERS = {
     rpm: 30,
     limits: { 'qwen-3.8-27b': { rpm: 450, tpm: 150000 }, 'gpt-oss-120b': { rpm: 5, tpm: 30000 } },
   },
-  openrouter: { baseURL: 'https://openrouter.ai/api/v1', model: 'meta-llama/llama-3.3-70b-instruct:free', keyVars: ['OPENROUTER_API_KEY'], rpm: 15 },
+  // OpenRouter (cuenta gratuita sin créditos): ~20 peticiones/min compartidas entre todos sus modelos gratis y ~50 al día.
+  // Por eso entra como RESPALDO (backup): solo recibe consultas cuando los demás proveedores no pueden atenderlas.
+  openrouter: {
+    baseURL: 'https://openrouter.ai/api/v1',
+    model: 'nvidia/nemotron-3.5-lightning:free',
+    models: ['nvidia/nemotron-3.5-lightning:free', 'nvidia/nemotron-3-ultra-550b-a55b:free'],
+    keyVars: ['OPENROUTER_API_KEY'],
+    rpm: 10,
+    backup: true,
+  },
   qwen: { baseURL: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1', model: 'qwen-plus', keyVars: ['DASHSCOPE_API_KEY', 'LLM_API_KEY'], rpm: 30 },
   openai: { baseURL: undefined, model: 'gpt-4o-mini', keyVars: ['OPENAI_API_KEY', 'LLM_API_KEY'], rpm: 30 },
 };
@@ -72,6 +83,8 @@ export const resolvePool = (env = process.env) => {
         // límites por modelo (spec.limits) y, si el .env los fija, tienen prioridad
         rpm: num(env[`${upper}_RPM`], spec.limits?.[model]?.rpm ?? spec.rpm),
         tpm: num(env[`${upper}_TPM`], spec.limits?.[model]?.tpm ?? spec.tpm), // undefined = sin tope conocido de tokens/min
+        // un proveedor de respaldo solo se usa cuando los principales no pueden (<PROVEEDOR>_BACKUP=false lo vuelve normal)
+        backup: env[`${upper}_BACKUP`] !== undefined ? env[`${upper}_BACKUP`] === 'true' : !!spec.backup,
         temperature: name === 'gemini' ? undefined : num(env.LLM_TEMPERATURE, 0),
       });
     }
@@ -146,7 +159,9 @@ export class LLMPool {
 
     // Preferir a los que aún tienen margen dentro de su límite por minuto (se deja 10 % de holgura)
     const withRoom = ready.filter((m) => this.#recent(m) < Math.max(1, Math.floor(m.rpm * 0.9)) && this.#hasTokenRoom(m));
-    const pool = withRoom.length ? withRoom : ready;
+    // Los de respaldo solo entran si no queda ningún principal con margen
+    const primary = withRoom.filter((m) => !m.backup);
+    const pool = primary.length ? primary : withRoom.length ? withRoom : ready;
 
     // Carga relativa: lo ya usado este minuto respecto a su capacidad, más lo que está en curso
     const load = (m) => Math.max(this.#recent(m) / m.rpm, m.tpm ? this.#tokensLastMinute(m) / m.tpm : 0) + m.inFlight * 0.5;
