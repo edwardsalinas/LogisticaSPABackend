@@ -152,6 +152,57 @@ export const prepareAssignProposal = async (user, db, { code, codes, route_ref }
   }
 };
 
+/**
+ * Prepara la propuesta de registrar un paquete (y agendarlo si se indica un viaje). La usan la herramienta del agente y la
+ * lectura de guías por foto, donde una persona revisó los datos. Devuelve el JSON de la propuesta o el motivo del rechazo.
+ */
+export const prepareCreateProposal = async (user, db, input) => {
+  try {
+    if (!OPS.includes(user.role)) return DENIED;
+    const parsed = packageSchema.safeParse({
+      origen: input.origen,
+      destino: input.destino,
+      peso: input.peso,
+      recipient_name: input.recipient_name,
+      ...(input.recipient_phone ? { recipient_phone: input.recipient_phone } : {}),
+      ...(input.sender_name ? { sender_name: input.sender_name } : {}),
+      ...(input.sender_phone ? { sender_phone: input.sender_phone } : {}),
+      ...(input.description ? { description: input.description } : {}),
+    });
+    if (!parsed.success) {
+      const problems = Object.entries(parsed.error.flatten().fieldErrors).map(([f, m]) => `${f}: ${m[0]}`).join('; ');
+    return `Faltan o son inválidos algunos datos del paquete (${problems}). Pídeselos al usuario.`;
+    }
+    const d = parsed.data;
+
+    let tripLine = null;
+    if (input.route_ref) {
+      const check = await checkRouteForPackage(db, input.route_ref, d.peso);
+      if (check.error) return check.error;
+      d.route_id = check.route.id;
+      tripLine = `Se agenda en el viaje ${check.route.origin} → ${check.route.destination}, sale ${whenText(check.route.departure_time)}`;
+    }
+
+    const proposal = createProposal({
+      user,
+      type: 'create_package',
+      params: { data: d },
+      title: tripLine ? 'Registrar un paquete y agendarlo' : 'Registrar un paquete nuevo',
+      lines: [
+        `Ruta: ${d.origen} → ${d.destino}`,
+        ...(tripLine ? [tripLine] : []),
+        `Peso: ${d.peso} kg`,
+        `Destinatario: ${d.recipient_name}${d.recipient_phone ? ` (${d.recipient_phone})` : ''}`,
+        ...(d.sender_name ? [`Remitente: ${d.sender_name}${d.sender_phone ? ` (${d.sender_phone})` : ''}`] : []),
+        ...(d.description ? [`Descripción: ${d.description}`] : []),
+      ],
+    });
+    return proposalResult(proposal);
+  } catch (e) {
+    return `No se pudo preparar la acción: ${e.message}`;
+  }
+};
+
 export const buildActionTools = (user, db) => {
   // ------------------------------------------------------------------ registrar evento (uno o varios paquetes)
   const proposeEvent = tool(
@@ -309,52 +360,7 @@ export const buildActionTools = (user, db) => {
 
   // ------------------------------------------------------------------ crear (y opcionalmente agendar en un viaje)
   const proposeCreate = tool(
-    async (input) => {
-      try {
-        if (!OPS.includes(user.role)) return DENIED;
-        const parsed = packageSchema.safeParse({
-          origen: input.origen,
-          destino: input.destino,
-          peso: input.peso,
-          recipient_name: input.recipient_name,
-          ...(input.recipient_phone ? { recipient_phone: input.recipient_phone } : {}),
-          ...(input.sender_name ? { sender_name: input.sender_name } : {}),
-          ...(input.sender_phone ? { sender_phone: input.sender_phone } : {}),
-          ...(input.description ? { description: input.description } : {}),
-        });
-        if (!parsed.success) {
-          const problems = Object.entries(parsed.error.flatten().fieldErrors).map(([f, m]) => `${f}: ${m[0]}`).join('; ');
-          return `Faltan o son inválidos algunos datos del paquete (${problems}). Pídeselos al usuario.`;
-        }
-        const d = parsed.data;
-
-        let tripLine = null;
-        if (input.route_ref) {
-          const check = await checkRouteForPackage(db, input.route_ref, d.peso);
-          if (check.error) return check.error;
-          d.route_id = check.route.id;
-          tripLine = `Se agenda en el viaje ${check.route.origin} → ${check.route.destination}, sale ${whenText(check.route.departure_time)}`;
-        }
-
-        const proposal = createProposal({
-          user,
-          type: 'create_package',
-          params: { data: d },
-          title: tripLine ? 'Registrar un paquete y agendarlo' : 'Registrar un paquete nuevo',
-          lines: [
-            `Ruta: ${d.origen} → ${d.destino}`,
-            ...(tripLine ? [tripLine] : []),
-            `Peso: ${d.peso} kg`,
-            `Destinatario: ${d.recipient_name}${d.recipient_phone ? ` (${d.recipient_phone})` : ''}`,
-            ...(d.sender_name ? [`Remitente: ${d.sender_name}${d.sender_phone ? ` (${d.sender_phone})` : ''}`] : []),
-            ...(d.description ? [`Descripción: ${d.description}`] : []),
-          ],
-        });
-        return proposalResult(proposal);
-      } catch (e) {
-        return `No se pudo preparar la acción: ${e.message}`;
-      }
-    },
+    async (input) => prepareCreateProposal(user, db, input),
     {
       name: 'propose_create_package',
       description: 'PROPONE registrar un paquete nuevo (origen, destino, peso en kg y nombre del destinatario son obligatorios; teléfono, remitente y descripción son opcionales) y, con route_ref, agendarlo en un viaje concreto. No lo crea: el usuario debe confirmarlo en la tarjeta. Solo administradores y operadores. Si falta algún dato obligatorio, pídeselo al usuario antes de llamarla.',

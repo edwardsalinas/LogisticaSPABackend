@@ -37,6 +37,8 @@ app.use(
     credentials: true,
   })
 );
+// Las fotos de documentos llegan en base64 (hasta ~5,5 MB): este analizador va ANTES del general, que limita a 100 kb
+app.use('/api/ai-agent/documents/extract', express.json({ limit: '6mb' }));
 app.use(express.json());
 
 // Healthcheck (usado por Docker Compose)

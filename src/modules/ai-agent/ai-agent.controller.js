@@ -5,7 +5,8 @@ import { defaultExecutors } from './ai-actions.executors.js';
 import supabase from '../../shared/config/supabase.js';
 import { resolveConversation, saveTurn, listConversations, getConversation, deleteConversation } from './ai-conversations.service.js';
 import { recordChat, usageReport } from './ai-audit.service.js';
-import { prepareAssignProposal } from './ai-agent.actions.js';
+import { prepareAssignProposal, prepareCreateProposal } from './ai-agent.actions.js';
+import { validateImage, extractFromImage } from './ai-agent.documents.js';
 
 // Base de datos del historial y la auditoría (se puede sustituir en las pruebas)
 let db = supabase;
@@ -260,5 +261,74 @@ export const handlePrepareAssignment = async (req, res) => {
   } catch (error) {
     console.error('[AI Suggestion Error]:', error);
     return res.status(500).json({ success: false, message: 'No se pudo preparar la asignación.' });
+  }
+};
+
+// ============================================================ guías de remisión por foto
+const OPS = ['admin', 'logistics_operator'];
+const extractSchema = z.object({ image: z.string().min(20), mime: z.string().max(40).optional() });
+
+/**
+ * Lee una foto de guía de remisión y devuelve los campos que ve, para que una persona los revise y corrija.
+ * No registra nada. La imagen no se guarda: solo se guarda la métrica de uso (modelo, tokens, tiempo).
+ */
+export const handleExtractDocument = async (req, res) => {
+  const started = Date.now();
+  if (!OPS.includes(req.user?.role)) return res.status(403).json({ success: false, message: 'No tienes permiso para leer documentos.' });
+  let body;
+  try {
+    body = extractSchema.parse(req.body);
+  } catch (error) {
+    if (error instanceof z.ZodError) return res.status(400).json({ success: false, message: 'No llegó ninguna imagen.' });
+    throw error;
+  }
+  const image = validateImage(body);
+  if (image.error) return res.status(image.status).json({ success: false, message: image.error });
+
+  try {
+    const out = await AiAgentService.getPool().extractDocument(image);
+    await recordChat(db, { userId: req.user.id, role: req.user.role, model: out.model, tools: ['extract_document'], steps: 1, tokens: out.tokens, latencyMs: Date.now() - started, status: 'ok' });
+    return res.status(200).json({ success: true, data: { fields: out.fields, missing: out.missing, warnings: out.warnings, model: out.model } });
+  } catch (error) {
+    console.error('[AI Document Error]:', error);
+    const busy = providerBusyStatus(error);
+    await recordChat(db, { userId: req.user.id, role: req.user.role, tools: ['extract_document'], latencyMs: Date.now() - started, status: 'error', errorStatus: busy ?? 500 });
+    return res.status(busy ?? 500).json({
+      success: false,
+      message: busy ? 'El lector de documentos está muy ocupado. Inténtalo en un minuto.' : 'No se pudo leer el documento. Inténtalo con otra foto o completa los datos a mano.',
+    });
+  }
+};
+
+const proposeFromDocumentSchema = z.object({
+  origen: z.string().trim().max(120),
+  destino: z.string().trim().max(120),
+  peso: z.number().positive().max(100000),
+  recipient_name: z.string().trim().max(120),
+  recipient_phone: z.string().trim().max(30).optional().nullable(),
+  sender_name: z.string().trim().max(120).optional().nullable(),
+  sender_phone: z.string().trim().max(30).optional().nullable(),
+  description: z.string().trim().max(200).optional().nullable(),
+});
+
+/** Convierte los datos YA REVISADOS por la persona en una propuesta de registro (que se confirma con el botón de siempre). */
+export const handleProposeFromDocument = async (req, res) => {
+  let body;
+  try {
+    body = proposeFromDocumentSchema.parse(req.body);
+  } catch (error) {
+    if (error instanceof z.ZodError) return res.status(400).json({ success: false, errors: error.flatten().fieldErrors });
+    throw error;
+  }
+  try {
+    const clean = Object.fromEntries(Object.entries(body).filter(([, v]) => v != null && v !== ''));
+    const result = await prepareCreateProposal(req.user, db, clean);
+    let parsed = null;
+    try { parsed = JSON.parse(result); } catch { /* es un mensaje de rechazo */ }
+    if (parsed?.kind === 'action_proposal') return res.status(200).json({ success: true, data: parsed });
+    return res.status(/^No tienes permiso/.test(result) ? 403 : 409).json({ success: false, message: String(result) });
+  } catch (error) {
+    console.error('[AI Document Propose Error]:', error);
+    return res.status(500).json({ success: false, message: 'No se pudo preparar el registro.' });
   }
 };

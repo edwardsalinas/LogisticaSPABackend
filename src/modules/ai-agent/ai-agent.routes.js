@@ -60,6 +60,12 @@ router.delete('/conversations/:id', AiAgentController.handleDeleteConversation);
  */
 router.post('/chat', chatLimiter, AiAgentController.handleChat);
 
+/** Leer una foto de guía de remisión (solo personal): devuelve los campos para revisarlos; no registra nada. */
+router.post('/documents/extract', chatLimiter, AiAgentController.handleExtractDocument);
+
+/** Con los datos ya revisados por la persona, prepara la propuesta de registro (se confirma como siempre). */
+router.post('/documents/propose', AiAgentController.handleProposeFromDocument);
+
 /** Convierte un grupo de las sugerencias de asignación en una propuesta a confirmar (sin llamar al modelo). */
 router.post('/suggestions/assign', AiAgentController.handlePrepareAssignment);
 

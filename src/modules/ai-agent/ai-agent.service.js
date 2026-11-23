@@ -5,6 +5,7 @@ import { toolsForUser, extractAttachments } from './ai-agent.tools.js';
 import { LLMPool, resolvePool } from './llm.pool.js';
 import { selectToolNames, fastPlanFor } from './ai-agent.intents.js';
 import { withToolCache } from './ai-agent.cache.js';
+import { extractFromImage } from './ai-agent.documents.js';
 
 /**
  * Factory paramétrico para inicializar el LLM. El proveedor se elige con LLM_PROVIDER en el .env.
@@ -64,12 +65,16 @@ export const resolveLLMConfig = (env = process.env) => {
 /** Crea el cliente de LangChain para una configuración concreta (un miembro del pool o la configuración clásica). */
 export const buildChatModel = (config) => {
   if (config.provider === 'gemini') {
-    return new ChatGoogleGenerativeAI({
+    const llm = new ChatGoogleGenerativeAI({
       model: config.model,
       apiKey: config.apiKey,
       ...(config.temperature !== undefined ? { temperature: config.temperature } : {}),
       ...(config.baseURL ? { baseUrl: config.baseURL } : {}),
     });
+    // LangChain solo reconoce como "con visión" los nombres que empiezan por gemini-1.5/gemini-2…; el alias
+    // "gemini-flash-lite-latest" (siempre la Flash vigente) también ve imágenes, así que se indica explícitamente.
+    Object.defineProperty(llm, '_isMultimodalModel', { get: () => true });
+    return llm;
   }
 
   return new ChatOpenAI({
@@ -102,10 +107,13 @@ export const getPool = () => {
     strategy: process.env.LLM_STRATEGY === 'speed' ? 'speed' : 'balanced',
     timeoutMs: Number(process.env.LLM_TIMEOUT_MS) || 30000,
   });
+  pool.extractDocument = (image) => extractFromImage(image, pool); // leer documentos con un modelo que vea imágenes
   console.info(`[LLM Pool] ${members.map((m) => `${m.id}:${m.model}`).join(', ')} (estrategia ${pool.strategy})`);
   return pool;
 };
 export const resetPool = () => { pool = undefined; };
+/** Solo para pruebas: reemplaza el balanceador por uno simulado. */
+export const _setPool = (replacement) => { pool = replacement; };
 
 const ROLE_HELP = {
   client: 'Ayudas a un cliente a seguir SUS envíos: dónde están, en qué estado, quién los lleva y cuándo llegan.',

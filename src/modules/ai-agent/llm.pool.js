@@ -45,6 +45,10 @@ export const POOL_PROVIDERS = {
   openai: { baseURL: undefined, model: 'gpt-4o-mini', keyVars: ['OPENAI_API_KEY', 'LLM_API_KEY'], rpm: 30 },
 };
 
+// Modelos que entienden imágenes (para leer documentos). Verificado el 22-nov-2026: Gemini y Qwen 3.8 (en Cerebras y en
+// Groq) leen la guía de ejemplo; gpt-oss y Nemotron "lightning" no aceptan imágenes.
+export const supportsVision = (provider, model) => provider === 'gemini' || /qwen.?3\.8|nemotron.*-vl|gemma-4|gpt-4o|pixtral|llava/i.test(model);
+
 const WINDOW_MS = 60 * 1000;
 const COOLDOWN = { rateLimited: 60 * 1000, transient: 30 * 1000, unavailable: 10 * 60 * 1000 };
 
@@ -87,6 +91,7 @@ export const resolvePool = (env = process.env) => {
         backup: env[`${upper}_BACKUP`] !== undefined ? env[`${upper}_BACKUP`] === 'true' : !!spec.backup,
         // gpt-oss "razona" antes de contestar: con esfuerzo bajo el primer texto llega mucho antes y para consultar
         // datos logísticos no hace falta pensar más (<PROVEEDOR>_REASONING_EFFORT=low|medium|high lo cambia)
+        vision: supportsVision(name, model),
         reasoningEffort: env[`${upper}_REASONING_EFFORT`] || (/gpt-oss/i.test(model) ? 'low' : undefined),
         temperature: name === 'gemini' ? undefined : num(env.LLM_TEMPERATURE, 0),
       });
@@ -155,9 +160,9 @@ export class LLMPool {
   }
 
   /** El miembro más adecuado ahora (o null si no queda ninguno fuera de enfriamiento). */
-  pick(excluded = new Set()) {
+  pick(excluded = new Set(), accept = null) {
     const now = this.now();
-    const ready = this.members.filter((m) => !excluded.has(m.id) && m.cooldownUntil <= now);
+    const ready = this.members.filter((m) => !excluded.has(m.id) && m.cooldownUntil <= now && (!accept || accept(m)));
     if (ready.length === 0) return null;
 
     // Preferir a los que aún tienen margen dentro de su límite por minuto (se deja 10 % de holgura)
@@ -189,11 +194,13 @@ export class LLMPool {
    * para respetar los topes por minuto (los proveedores cuentan cada llamada, no cada consulta).
    * Devuelve { result, member, attempts }.
    */
-  async run(fn, { canRetry = () => true, tokensOf = () => 0, callsOf = () => 1 } = {}) {
+  async run(fn, { canRetry = () => true, tokensOf = () => 0, callsOf = () => 1, accept = null } = {}) {
     const tried = new Set();
     let lastError;
-    for (let attempt = 1; attempt <= Math.min(this.maxAttempts, this.size); attempt += 1) {
-      const m = this.pick(tried);
+    const candidates = accept ? this.members.filter(accept).length : this.size;
+    if (candidates === 0) throw Object.assign(new Error('Ningún modelo configurado puede hacer esto (por ejemplo, leer imágenes)'), { status: 503 });
+    for (let attempt = 1; attempt <= Math.min(this.maxAttempts, candidates); attempt += 1) {
+      const m = this.pick(tried, accept);
       if (!m) break;
       tried.add(m.id);
       m.inFlight += 1;
@@ -239,6 +246,7 @@ export class LLMPool {
     return this.members.map((m) => ({
       id: m.id,
       model: m.model,
+      vision: !!m.vision,
       rpm: m.rpm,
       tpm: m.tpm ?? null,
       tokens_last_minute: this.#tokensLastMinute(m),
