@@ -2,6 +2,13 @@ import { z } from 'zod';
 import * as AiAgentService from './ai-agent.service.js';
 import { confirmProposal, cancelProposal } from './ai-actions.service.js';
 import { defaultExecutors } from './ai-actions.executors.js';
+import supabase from '../../shared/config/supabase.js';
+import { resolveConversation, saveTurn, listConversations, getConversation, deleteConversation } from './ai-conversations.service.js';
+import { recordChat, usageReport } from './ai-audit.service.js';
+
+// Base de datos del historial y la auditoría (se puede sustituir en las pruebas)
+let db = supabase;
+export const _useDb = (replacement) => { db = replacement ?? supabase; };
 
 // Entrada validada: mensaje acotado e historial reciente (solo roles user/assistant, tamaño limitado)
 /**
@@ -26,20 +33,55 @@ export const chatSchema = z.object({
     .optional(),
   // true cuando el usuario habla con el asistente: la respuesta se leerá en voz alta y debe ser corta y hablada
   voice: z.boolean().optional(),
+  // conversación a la que pertenece el mensaje (si falta o no es del usuario, se abre una nueva)
+  conversation_id: z.string().max(64).optional(),
 });
 
+/** Lo que se guarda tras una consulta: la conversación y la métrica de auditoría (nunca rompen la respuesta). */
+const afterAnswer = ({ req, body, convo, out, started, streamed }) =>
+  Promise.all([
+    saveTurn(db, req.user, convo, { question: body.message, answer: { text: out.text, attachments: out.attachments } }),
+    recordChat(db, {
+      userId: req.user?.id,
+      role: req.user?.role,
+      conversationId: convo.id,
+      model: out.model,
+      tools: [...new Set((out.trace?.tools ?? []).map((t) => t.name))],
+      steps: out.trace?.steps,
+      tokens: out.trace?.tokens,
+      latencyMs: Date.now() - started,
+      fastPath: out.trace?.fast,
+      streamed,
+      voice: body.voice,
+      status: 'ok',
+    }),
+  ]);
+
+const auditFailure = ({ req, body, convo, started, streamed, status }) =>
+  recordChat(db, { userId: req.user?.id, role: req.user?.role, conversationId: convo?.id, latencyMs: Date.now() - started, streamed, voice: body?.voice, status: 'error', errorStatus: status });
+
 export const handleChat = async (req, res) => {
+  const started = Date.now();
+  let body;
+  let convoPromise;
   try {
-    const { message, history, voice } = chatSchema.parse(req.body);
-    const { text, attachments, model } = await AiAgentService.processChatMessage(message, { user: req.user, history, voice });
-    return res.status(200).json({ success: true, response: text, attachments, model });
+    body = chatSchema.parse(req.body);
+    // se comprueba la conversación EN PARALELO al trabajo del modelo: no suma tiempo a la respuesta
+    convoPromise = resolveConversation(db, req.user, body.conversation_id);
+    const out = await AiAgentService.processChatMessage(body.message, { user: req.user, history: body.history, voice: body.voice });
+    const convo = await convoPromise;
+    res.status(200).json({ success: true, response: out.text, attachments: out.attachments, model: out.model, conversation_id: convo.id });
+    await afterAnswer({ req, body, convo, out, started, streamed: false }); // después de responder
+    return undefined;
   } catch (error) {
     if (error instanceof z.ZodError) {
       return res.status(400).json({ success: false, errors: error.flatten().fieldErrors });
     }
+    if (res.headersSent) return undefined;
     // No se devuelve error.message: puede incluir detalles del proveedor del LLM (claves, URLs)
     console.error('[AI Agent Controller Error]:', error);
     const busy = providerBusyStatus(error);
+    await auditFailure({ req, body, convo: await convoPromise?.catch(() => null), started, streamed: false, status: busy ?? 500 });
     if (busy) {
       return res.status(busy).json({ success: false, message: 'El asistente está recibiendo muchas consultas. Espera un minuto e inténtalo de nuevo.' });
     }
@@ -106,23 +148,28 @@ export const handleChatStream = async (req, res) => {
   });
   res.flushHeaders();
 
+  const started = Date.now();
+  const convoPromise = resolveConversation(db, req.user, body.conversation_id);
   const abort = new AbortController();
   res.on('close', () => { if (!res.writableEnded) abort.abort(); }); // el usuario cerró la pestaña o canceló
   const send = (event) => { if (!res.writableEnded && !res.destroyed) res.write(`data: ${JSON.stringify(event)}\n\n`); };
   const heartbeat = setInterval(() => { if (!res.writableEnded) res.write(': ping\n\n'); }, HEARTBEAT_MS);
 
   try {
-    const { text, attachments, model } = await AiAgentService.processChatMessageStream(
+    const out = await AiAgentService.processChatMessageStream(
       body.message,
       { user: req.user, history: body.history, voice: body.voice },
       { emit: send, signal: abort.signal },
     );
-    send({ type: 'final', response: text, attachments, model });
+    const convo = await convoPromise;
+    send({ type: 'final', response: out.text, attachments: out.attachments, model: out.model, conversation_id: convo.id });
+    await afterAnswer({ req, body, convo, out, started, streamed: true }); // la pantalla ya tiene la respuesta
   } catch (error) {
     if (!abort.signal.aborted) {
       // No se devuelve error.message: puede incluir detalles del proveedor del LLM (claves, URLs)
       console.error('[AI Agent Stream Error]:', error);
       const busy = providerBusyStatus(error);
+      await auditFailure({ req, body, convo: await convoPromise.catch(() => null), started, streamed: true, status: busy ?? 500 });
       send({
         type: 'error',
         status: busy ?? 500,
@@ -134,5 +181,52 @@ export const handleChatStream = async (req, res) => {
   } finally {
     clearInterval(heartbeat);
     if (!res.writableEnded) res.end();
+  }
+};
+
+// ============================================================ historial de conversaciones
+const historyError = (res, error) => {
+  console.error('[AI History Error]:', error);
+  return res.status(500).json({ success: false, message: 'No se pudo cargar el historial.' });
+};
+
+export const handleListConversations = async (req, res) => {
+  try {
+    return res.status(200).json({ success: true, data: await listConversations(db, req.user) });
+  } catch (error) {
+    return historyError(res, error);
+  }
+};
+
+export const handleGetConversation = async (req, res) => {
+  try {
+    const found = await getConversation(db, req.user, req.params.id);
+    if (!found) return res.status(404).json({ success: false, message: 'La conversación no existe.' });
+    return res.status(200).json({ success: true, data: found });
+  } catch (error) {
+    return historyError(res, error);
+  }
+};
+
+export const handleDeleteConversation = async (req, res) => {
+  try {
+    const removed = await deleteConversation(db, req.user, req.params.id);
+    if (!removed) return res.status(404).json({ success: false, message: 'La conversación no existe.' });
+    return res.status(200).json({ success: true, message: 'Conversación eliminada.' });
+  } catch (error) {
+    return historyError(res, error);
+  }
+};
+
+/** Panel de uso de la IA (solo administradores): métricas agregadas, sin el contenido de las conversaciones. */
+export const handleUsage = async (req, res) => {
+  try {
+    const days = Number(req.query.days) || 7;
+    const report = await usageReport(db, { days });
+    const pool = AiAgentService.getPool();
+    return res.status(200).json({ success: true, data: { ...report, pool: { strategy: pool.strategy, models: pool.status() } } });
+  } catch (error) {
+    console.error('[AI Usage Error]:', error);
+    return res.status(500).json({ success: false, message: 'No se pudo calcular el uso de la IA.' });
   }
 };

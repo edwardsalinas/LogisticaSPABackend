@@ -9,6 +9,14 @@ router.use(requireAuth);
 /** Estado del balanceador de modelos (administradores). */
 router.get('/pool', requireRole(['admin']), AiAgentController.handlePoolStatus);
 
+/** Uso de la IA: consultas, aciertos, tiempos y tokens por modelo y por día (administradores; sin contenido de conversaciones). */
+router.get('/usage', requireRole(['admin']), AiAgentController.handleUsage);
+
+/** Historial: cada usuario ve, abre y borra solo SUS conversaciones. */
+router.get('/conversations', AiAgentController.handleListConversations);
+router.get('/conversations/:id', AiAgentController.handleGetConversation);
+router.delete('/conversations/:id', AiAgentController.handleDeleteConversation);
+
 /**
  * @swagger
  * /api/ai-agent/chat:

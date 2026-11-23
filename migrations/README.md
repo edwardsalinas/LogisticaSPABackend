@@ -27,6 +27,7 @@ Se aplican **en orden alfabético del nombre de archivo** (en el editor SQL de S
 | `019_route_atomic_operations` | Funciones SQL atómicas para crear, editar y borrar rutas |
 | `020_packages_delivered_at` | Columna `delivered_at` de `packages` (fecha de entrega) |
 | `021_custody_and_package_states` | `tracking_logs.recorded_by` (usuario responsable) y estados `en_agencia`, `siniestro` y `cancelado` en `packages` |
+| `022_ai_conversations_and_audit` | Historial de conversaciones del asistente (`ai_conversations`, `ai_messages`) y auditoría de cada consulta (`ai_chat_audit`: solo métricas, sin el texto). Completa las tablas `ai_*` antiguas si ya existían (vacías), sin borrar nada |
 
 ## Archivos con el mismo número (`012` y `014`)
 
