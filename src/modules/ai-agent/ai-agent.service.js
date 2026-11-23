@@ -169,6 +169,10 @@ const contentToText = (content) =>
  * @param {string} message mensaje del usuario (ya validado)
  * @param {{ user: object, history?: {role: 'user'|'assistant', content: string}[] }} context
  */
+/** Tokens que gastó una ejecución del agente (suma de lo que informó el proveedor en cada paso). */
+export const tokensUsed = (result) =>
+  (result?.messages ?? []).reduce((n, m) => n + (Number(m?.usage_metadata?.total_tokens) || 0), 0);
+
 export const processChatMessage = async (message, { user, history = [], voice = false } = {}) => {
   const tools = toolsForUser(user || { role: 'client' });
 
@@ -192,9 +196,9 @@ export const processChatMessage = async (message, { user, history = [], voice = 
       },
       { recursionLimit: RECURSION_LIMIT }
     ),
-    { canRetry: () => !state.proposed },
+    { canRetry: () => !state.proposed, tokensOf: tokensUsed },
   );
 
   const lastMessage = result.messages[result.messages.length - 1];
-  return { text: contentToText(lastMessage.content), attachments: extractAttachments(result.messages), model: `${member.id}:${member.model}` };
+  return { text: contentToText(lastMessage.content), attachments: extractAttachments(result.messages), model: member.id.includes(':') ? member.id : `${member.id}:${member.model}` };
 };

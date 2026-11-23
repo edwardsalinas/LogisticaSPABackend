@@ -12,12 +12,14 @@
  *   LLM_POOL=gemini,groq,cerebras,openrouter   orden de preferencia; solo se usan los que tienen clave
  *   LLM_STRATEGY=balanced | speed              balanced reparte por carga; speed prefiere al más rápido
  *   LLM_TIMEOUT_MS=30000                       tiempo máximo por intento antes de pasar a otro modelo
- *   <PROVEEDOR>_API_KEY, <PROVEEDOR>_MODEL, <PROVEEDOR>_RPM   clave, modelo y peticiones por minuto de cada uno
+ *   <PROVEEDOR>_API_KEY, <PROVEEDOR>_MODEL(S), <PROVEEDOR>_RPM, <PROVEEDOR>_TPM   clave, modelo(s), peticiones y tokens por minuto
+ *   (con <PROVEEDOR>_MODELS=a,b cada modelo entra al pool por separado, porque los proveedores limitan por modelo)
  */
 
 export const POOL_PROVIDERS = {
   gemini: { baseURL: undefined, model: 'gemini-flash-lite-latest', keyVars: ['GEMINI_API_KEY', 'GOOGLE_API_KEY', 'LLM_API_KEY'], rpm: 15 },
-  groq: { baseURL: 'https://api.groq.com/openai/v1', model: 'llama-3.3-70b-versatile', keyVars: ['GROQ_API_KEY'], rpm: 30 },
+  // Groq limita por MODELO (plan gratuito: 8 000 tokens/min y 1 000 peticiones/día cada uno): varios modelos suman capacidad
+  groq: { baseURL: 'https://api.groq.com/openai/v1', model: 'openai/gpt-oss-120b', models: ['openai/gpt-oss-120b', 'openai/gpt-oss-20b'], keyVars: ['GROQ_API_KEY'], rpm: 30, tpm: 8000 },
   cerebras: { baseURL: 'https://api.cerebras.ai/v1', model: 'llama-3.3-70b', keyVars: ['CEREBRAS_API_KEY'], rpm: 30 },
   openrouter: { baseURL: 'https://openrouter.ai/api/v1', model: 'meta-llama/llama-3.3-70b-instruct:free', keyVars: ['OPENROUTER_API_KEY'], rpm: 15 },
   qwen: { baseURL: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1', model: 'qwen-plus', keyVars: ['DASHSCOPE_API_KEY', 'LLM_API_KEY'], rpm: 30 },
@@ -46,16 +48,24 @@ export const resolvePool = (env = process.env) => {
     const upper = name.toUpperCase();
     const apiKey = spec.keyVars.map((k) => env[k]).find(Boolean);
     if (!apiKey) { skipped.push({ provider: name, reason: `falta la clave (${spec.keyVars[0]})` }); continue; }
-    entries.push({
-      id: name,
-      provider: name,
-      // LLM_MODEL_NAME (la variable de siempre) vale para el proveedor principal; los demás usan <PROVEEDOR>_MODEL
-      model: env[`${upper}_MODEL`] || (name === requested && env.LLM_MODEL_NAME) || spec.model,
-      baseURL: env[`${upper}_BASE_URL`] || (name === requested && env.LLM_BASE_URL) || spec.baseURL,
-      apiKey,
-      rpm: num(env[`${upper}_RPM`], spec.rpm),
-      temperature: name === 'gemini' ? undefined : num(env.LLM_TEMPERATURE, 0),
-    });
+    const listed = (env[`${upper}_MODELS`] ?? '').split(',').map((x) => x.trim()).filter(Boolean);
+    // LLM_MODEL_NAME (la variable de siempre) vale para el proveedor principal; los demás usan <PROVEEDOR>_MODEL(S)
+    const models = listed.length ? listed
+      : env[`${upper}_MODEL`] ? [env[`${upper}_MODEL`]]
+        : name === requested && env.LLM_MODEL_NAME ? [env.LLM_MODEL_NAME]
+          : (spec.models ?? [spec.model]);
+    for (const model of models) {
+      entries.push({
+        id: models.length > 1 ? `${name}:${model}` : name,
+        provider: name,
+        model,
+        baseURL: env[`${upper}_BASE_URL`] || (name === requested && env.LLM_BASE_URL) || spec.baseURL,
+        apiKey,
+        rpm: num(env[`${upper}_RPM`], spec.rpm),
+        tpm: num(env[`${upper}_TPM`], spec.tpm), // undefined = sin tope conocido de tokens por minuto
+        temperature: name === 'gemini' ? undefined : num(env.LLM_TEMPERATURE, 0),
+      });
+    }
   }
   return { entries, skipped };
 };
@@ -95,7 +105,7 @@ export class LLMPool {
     this.strategy = strategy;
     this.timeoutMs = timeoutMs;
     this.maxAttempts = maxAttempts;
-    this.members = entries.map((e) => ({ ...e, model_instance: null, inFlight: 0, stamps: [], cooldownUntil: 0, cooldownReason: null, ewmaMs: 0, lastUsed: 0, ok: 0, failed: 0, lastError: null }));
+    this.members = entries.map((e) => ({ ...e, model_instance: null, inFlight: 0, stamps: [], tokenStamps: [], avgTokens: 0, cooldownUntil: 0, cooldownReason: null, ewmaMs: 0, lastUsed: 0, ok: 0, failed: 0, lastError: null }));
   }
 
   get size() { return this.members.length; }
@@ -106,6 +116,19 @@ export class LLMPool {
     return m.stamps.length;
   }
 
+  /** Tokens gastados en el último minuto (según lo que informó el proveedor). */
+  #tokensLastMinute(m) {
+    const cut = this.now() - WINDOW_MS;
+    m.tokenStamps = m.tokenStamps.filter((x) => x.t > cut);
+    return m.tokenStamps.reduce((n, x) => n + x.n, 0);
+  }
+
+  /** ¿Cabe otra consulta típica en el presupuesto de tokens por minuto de este modelo? */
+  #hasTokenRoom(m) {
+    if (!m.tpm) return true;
+    return this.#tokensLastMinute(m) + (m.avgTokens || 0) <= m.tpm * 0.95;
+  }
+
   /** El miembro más adecuado ahora (o null si no queda ninguno fuera de enfriamiento). */
   pick(excluded = new Set()) {
     const now = this.now();
@@ -113,11 +136,11 @@ export class LLMPool {
     if (ready.length === 0) return null;
 
     // Preferir a los que aún tienen margen dentro de su límite por minuto (se deja 10 % de holgura)
-    const withRoom = ready.filter((m) => this.#recent(m) < Math.max(1, Math.floor(m.rpm * 0.9)));
+    const withRoom = ready.filter((m) => this.#recent(m) < Math.max(1, Math.floor(m.rpm * 0.9)) && this.#hasTokenRoom(m));
     const pool = withRoom.length ? withRoom : ready;
 
     // Carga relativa: lo ya usado este minuto respecto a su capacidad, más lo que está en curso
-    const load = (m) => this.#recent(m) / m.rpm + m.inFlight * 0.5;
+    const load = (m) => Math.max(this.#recent(m) / m.rpm, m.tpm ? this.#tokensLastMinute(m) / m.tpm : 0) + m.inFlight * 0.5;
     const rank = this.strategy === 'speed'
       ? (a, b) => (a.ewmaMs || 0) - (b.ewmaMs || 0) || load(a) - load(b)
       : (a, b) => load(a) - load(b) || (a.ewmaMs || 0) - (b.ewmaMs || 0) || a.lastUsed - b.lastUsed;
@@ -134,9 +157,10 @@ export class LLMPool {
   /**
    * Ejecuta `fn(model, member)` en el mejor modelo; si falla de forma recuperable lo reintenta en otro.
    * `canRetry()` permite abortar el reintento (p. ej. si la consulta ya tuvo efectos que no deben repetirse).
+   * `tokensOf(result)` informa cuántos tokens gastó la consulta, para respetar el tope por minuto de cada modelo.
    * Devuelve { result, member, attempts }.
    */
-  async run(fn, { canRetry = () => true } = {}) {
+  async run(fn, { canRetry = () => true, tokensOf = () => 0 } = {}) {
     const tried = new Set();
     let lastError;
     for (let attempt = 1; attempt <= Math.min(this.maxAttempts, this.size); attempt += 1) {
@@ -154,6 +178,11 @@ export class LLMPool {
         m.ewmaMs = m.ewmaMs ? m.ewmaMs * 0.7 + took * 0.3 : took;
         m.ok += 1;
         m.lastError = null;
+        const used = Number(tokensOf(result)) || 0;
+        if (used > 0) {
+          m.tokenStamps.push({ t: this.now(), n: used });
+          m.avgTokens = m.avgTokens ? m.avgTokens * 0.7 + used * 0.3 : used;
+        }
         return { result, member: m, attempts: attempt };
       } catch (error) {
         m.failed += 1;
@@ -179,6 +208,8 @@ export class LLMPool {
       id: m.id,
       model: m.model,
       rpm: m.rpm,
+      tpm: m.tpm ?? null,
+      tokens_last_minute: this.#tokensLastMinute(m),
       in_flight: m.inFlight,
       requests_last_minute: this.#recent(m),
       ok: m.ok,

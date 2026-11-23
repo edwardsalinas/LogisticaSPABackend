@@ -17,7 +17,7 @@ test('sin LLM_POOL se comporta como antes: solo el proveedor principal', () => {
 
 test('LLM_POOL arma el pool en orden y solo con los proveedores que tienen clave', () => {
   const { entries: e, skipped } = resolvePool({ LLM_POOL: 'gemini, groq ,cerebras,openrouter,inventado', GEMINI_API_KEY: 'g', GROQ_API_KEY: 'q', OPENROUTER_API_KEY: 'o' });
-  assert.deepEqual(e.map((x) => x.id), ['gemini', 'groq', 'openrouter']);
+  assert.deepEqual(e.map((x) => x.provider), ['gemini', 'groq', 'groq', 'openrouter']); // Groq entra con 2 modelos
   assert.deepEqual(skipped.map((s) => s.provider), ['cerebras', 'inventado']);
   assert.match(skipped[0].reason, /CEREBRAS_API_KEY/);
 });
@@ -32,7 +32,7 @@ test('cada proveedor puede cambiar su modelo, límite y endpoint desde el .env',
 test('LLM_MODEL_NAME solo afecta al proveedor principal', () => {
   const { entries: e } = resolvePool({ LLM_PROVIDER: 'gemini', LLM_MODEL_NAME: 'gemini-pro', LLM_POOL: 'gemini,groq', GEMINI_API_KEY: 'g', GROQ_API_KEY: 'q' });
   assert.equal(e.find((x) => x.id === 'gemini').model, 'gemini-pro');
-  assert.equal(e.find((x) => x.id === 'groq').model, 'llama-3.3-70b-versatile');
+  assert.equal(e.find((x) => x.provider === 'groq').model, 'openai/gpt-oss-120b');
 });
 
 test('las claves no aparecen en el estado que ve el administrador', () => {
@@ -195,4 +195,46 @@ test('registra éxitos, fallos y tiempo medio por modelo', async () => {
   assert.equal(s.ok, 1);
   assert.equal(s.failed, 1);
   assert.equal(s.avg_ms, 200);
+});
+
+// ---------------------------------------------------------------- varios modelos del mismo proveedor y tokens por minuto
+test('Groq entra con varios modelos, cada uno por separado (el proveedor limita por modelo)', () => {
+  const { entries: e } = resolvePool({ LLM_POOL: 'groq', GROQ_API_KEY: 'q' });
+  assert.deepEqual(e.map((x) => x.id), ['groq:openai/gpt-oss-120b', 'groq:openai/gpt-oss-20b']);
+  assert.ok(e.every((x) => x.tpm === 8000 && x.provider === 'groq'));
+});
+
+test('<PROVEEDOR>_MODELS define la lista de modelos y <PROVEEDOR>_TPM el tope de tokens', () => {
+  const { entries: e } = resolvePool({ LLM_POOL: 'groq', GROQ_API_KEY: 'q', GROQ_MODELS: 'a, b ,c', GROQ_TPM: '6000' });
+  assert.deepEqual(e.map((x) => x.model), ['a', 'b', 'c']);
+  assert.equal(e[0].tpm, 6000);
+});
+
+test('con un solo modelo el id sigue siendo el nombre del proveedor', () => {
+  const { entries: e } = resolvePool({ LLM_POOL: 'groq', GROQ_API_KEY: 'q', GROQ_MODEL: 'solo' });
+  assert.deepEqual(e.map((x) => x.id), ['groq']);
+});
+
+test('respeta los tokens por minuto: si un modelo ya gastó su presupuesto, la consulta va a otro', async () => {
+  const c = clock();
+  const list = [{ id: 'chico', provider: 'x', model: 'm', rpm: 100, tpm: 8000 }, { id: 'grande', provider: 'x', model: 'm', rpm: 100 }];
+  const pool = new LLMPool(list, { build: () => ({}), now: c.now });
+  const order = [];
+  for (let i = 0; i < 6; i += 1) {
+    const { member } = await pool.run(async () => 'ok', { tokensOf: () => 3500 });
+    order.push(member.id);
+    c.tick(500);
+  }
+  const chico = order.filter((x) => x === 'chico').length;
+  assert.ok(chico <= 2, `chico (8 000 tokens/min) no puede recibir más de 2 consultas de 3 500 tokens por minuto: ${order}`);
+  assert.ok(pool.status().find((x) => x.id === 'chico').tokens_last_minute <= 8000);
+});
+
+test('pasado el minuto, los tokens se liberan y el modelo vuelve a recibir consultas', async () => {
+  const c = clock();
+  const pool = new LLMPool([{ id: 'a', provider: 'x', model: 'm', rpm: 100, tpm: 8000 }], { build: () => ({}), now: c.now });
+  await pool.run(async () => 'ok', { tokensOf: () => 7500 });
+  assert.equal(pool.status()[0].tokens_last_minute, 7500);
+  c.tick(61_000);
+  assert.equal(pool.status()[0].tokens_last_minute, 0);
 });
