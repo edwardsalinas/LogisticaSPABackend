@@ -136,6 +136,7 @@ const TOOL_HINTS = {
   get_daily_briefing: 'Para "cómo va el día" o "qué atender" usa get_daily_briefing (una sola llamada) y empieza por las prioridades que trae ordenadas.',
   get_analytics_summary: 'Para balances de un período usa get_analytics_summary.',
   find_available_trips: 'Para viajes y espacio según fecha y horario usa find_available_trips.',
+  suggest_assignments: 'Para "paquetes sueltos" o "sugiere asignaciones" usa suggest_assignments: resume en pocas frases cuántos se pueden asignar y cuáles no (y por qué); la pantalla ofrece un botón para preparar cada asignación, no los repitas uno por uno.',
   check_fleet_availability: 'El personal ve además vehículos y conductores libres con check_fleet_availability.',
 };
 

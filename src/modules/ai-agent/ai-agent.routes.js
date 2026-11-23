@@ -60,6 +60,9 @@ router.delete('/conversations/:id', AiAgentController.handleDeleteConversation);
  */
 router.post('/chat', chatLimiter, AiAgentController.handleChat);
 
+/** Convierte un grupo de las sugerencias de asignación en una propuesta a confirmar (sin llamar al modelo). */
+router.post('/suggestions/assign', AiAgentController.handlePrepareAssignment);
+
 /**
  * @swagger
  * /api/ai-agent/chat/stream:

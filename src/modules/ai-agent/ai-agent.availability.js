@@ -47,6 +47,38 @@ const vehicleText = (v) => {
 /** ¿Se solapan [aStart,aEnd] y [bStart,bEnd]? */
 export const overlaps = (aStart, aEnd, bStart, bEnd) => aStart <= bEnd && bStart <= aEnd;
 
+/** Añade a cada viaje su vehículo y el espacio libre (kg). `kg` (opcional) indica si cabe un paquete de ese peso. */
+export const enrichTrips = async (db, list, kg = null) => {
+
+    const vehicleIds = [...new Set(list.map((r) => r.vehicle_id).filter(Boolean))];
+    const routeIds = list.map((r) => r.id);
+    const [vehicles, loads] = await Promise.all([
+      vehicleIds.length ? db.from('vehicles').select('id, plate, brand, model, capacity_kg').in('id', vehicleIds) : { data: [] },
+      routeIds.length ? db.from('packages').select('route_id, peso').in('route_id', routeIds) : { data: [] },
+    ]);
+    const vById = Object.fromEntries((vehicles.data || []).map((v) => [v.id, v]));
+    const used = {};
+    for (const p of loads.data || []) used[p.route_id] = (used[p.route_id] || 0) + (Number(p.peso) || 0);
+    return list.map((r) => {
+      const v = vById[r.vehicle_id];
+      const capacity = v?.capacity_kg != null ? Number(v.capacity_kg) : null;
+      const usedKg = round1(used[r.id] || 0);
+      const free = capacity != null ? round1(capacity - usedKg) : null;
+      return {
+        ref: r.route_code || r.id, // lo que se pasa a propose_create_package para agendar en este viaje
+        origin: r.origin,
+        destination: r.destination,
+        departure_time: r.departure_time,
+        estimated_arrival: r.estimated_arrival,
+        vehicle: vehicleText(v),
+        capacity_kg: capacity,
+        used_kg: usedKg,
+        free_kg: free,
+        fits: kg == null ? (free == null ? null : free > 0) : free == null ? null : free >= kg,
+      };
+    });
+};
+
 export const buildAvailabilityTools = (user, db) => {
   const findAvailableTrips = tool(
     async ({ date, from_time, to_time, origin, destination, weight_kg }) => {
@@ -72,35 +104,7 @@ export const buildAvailabilityTools = (user, db) => {
         const { data: routes, error } = await base().gte('departure_time', win.fromISO).lte('departure_time', win.toISO).limit(MAX_TRIPS);
         if (error) throw error;
 
-        const enrich = async (list) => {
-          const vehicleIds = [...new Set(list.map((r) => r.vehicle_id).filter(Boolean))];
-          const routeIds = list.map((r) => r.id);
-          const [vehicles, loads] = await Promise.all([
-            vehicleIds.length ? db.from('vehicles').select('id, plate, brand, model, capacity_kg').in('id', vehicleIds) : { data: [] },
-            routeIds.length ? db.from('packages').select('route_id, peso').in('route_id', routeIds) : { data: [] },
-          ]);
-          const vById = Object.fromEntries((vehicles.data || []).map((v) => [v.id, v]));
-          const used = {};
-          for (const p of loads.data || []) used[p.route_id] = (used[p.route_id] || 0) + (Number(p.peso) || 0);
-          return list.map((r) => {
-            const v = vById[r.vehicle_id];
-            const capacity = v?.capacity_kg != null ? Number(v.capacity_kg) : null;
-            const usedKg = round1(used[r.id] || 0);
-            const free = capacity != null ? round1(capacity - usedKg) : null;
-            return {
-              ref: r.route_code || r.id, // lo que se pasa a propose_create_package para agendar en este viaje
-              origin: r.origin,
-              destination: r.destination,
-              departure_time: r.departure_time,
-              estimated_arrival: r.estimated_arrival,
-              vehicle: vehicleText(v),
-              capacity_kg: capacity,
-              used_kg: usedKg,
-              free_kg: free,
-              fits: kg == null ? (free == null ? null : free > 0) : free == null ? null : free >= kg,
-            };
-          });
-        };
+        const enrich = (list) => enrichTrips(db, list, kg);
 
         const trips = await enrich(routes || []);
         // Si no hay nada en esa ventana, se ofrecen los siguientes viajes (14 días) para que la conversación avance

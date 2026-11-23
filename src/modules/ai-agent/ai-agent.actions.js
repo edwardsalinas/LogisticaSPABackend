@@ -104,6 +104,54 @@ export const checkRouteForPackage = async (db, routeRef, weightKg) => {
 const whenText = (iso) => new Date(iso).toLocaleString('es-BO', { timeZone: 'America/La_Paz', weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' });
 const omitted = (skipped) => (skipped.length ? [`Se omiten ${skipped.length}: ${skipped.map((s) => `${s.code} (${s.reason})`).join('; ')}`] : []);
 
+/**
+ * Prepara la propuesta de asignar paquetes a un viaje. La usan la herramienta del agente y el botón "Preparar asignación"
+ * de las sugerencias (sin pasar por el modelo). Devuelve el JSON de la propuesta o un texto con el motivo del rechazo.
+ */
+export const prepareAssignProposal = async (user, db, { code, codes, route_ref }) => {
+  try {
+    if (!OPS.includes(user.role)) return DENIED;
+    const parsed = normalizeCodes({ code, codes });
+    if (parsed.error) return parsed.error;
+
+    const found = [];
+    const skipped = [];
+    for (const c of parsed.codes) {
+      const pkg = await findPackage(db, c);
+      if (!pkg) { skipped.push({ code: c, reason: 'no existe' }); continue; }
+      if (!ASSIGNABLE.includes(pkg.status)) { skipped.push({ code: pkg.tracking_code, reason: `está ${STATUS_TEXT[pkg.status].toLowerCase()}; solo se asignan paquetes pendientes o asignados` }); continue; }
+      found.push(pkg);
+    }
+    if (found.length === 0) return `No hay ningún paquete que se pueda asignar (${skipped.map((s) => `${s.code}: ${s.reason}`).join('; ')}).`;
+
+    // el viaje debe estar planeado y tener espacio para TODOS los paquetes juntos
+    const totalKg = Math.round(found.reduce((s, p) => s + (Number(p.peso) || 0), 0) * 10) / 10;
+    const check = await checkRouteForPackage(db, route_ref, totalKg);
+    if (check.error) return check.error;
+
+    // aviso (no bloqueo): el paquete va a otro destino que el viaje
+    const mismatched = found.filter((p) => String(p.destino).toLowerCase() !== String(check.route.destination).toLowerCase());
+    const proposal = createProposal({
+      user,
+      type: 'assign_package',
+      params: { route_id: check.route.id, items: found.map((p) => ({ package_id: p.id, tracking_code: p.tracking_code, peso: Number(p.peso) || 0 })) },
+      title: found.length === 1 ? 'Asignar un paquete a un viaje' : `Asignar ${found.length} paquetes a un viaje`,
+      lines: [
+    `Viaje: ${check.route.origin} → ${check.route.destination}, sale ${whenText(check.route.departure_time)}`,
+    found.length === 1
+      ? `Paquete: ${found[0].tracking_code} (${found[0].origen} → ${found[0].destino}, ${found[0].peso} kg)`
+      : `Paquetes (${found.length}): ${found.map((p) => p.tracking_code).join(', ')} — ${totalKg} kg en total`,
+    ...(check.freeKg != null ? [`Espacio libre del viaje: ${check.freeKg} kg`] : []),
+    ...(mismatched.length ? [`Aviso: ${mismatched.map((p) => `${p.tracking_code} va a ${p.destino}`).join(', ')}, distinto del destino del viaje`] : []),
+    ...omitted(skipped),
+      ],
+    });
+    return proposalResult(proposal, skipped);
+  } catch (e) {
+    return `No se pudo preparar la acción: ${e.message}`;
+  }
+};
+
 export const buildActionTools = (user, db) => {
   // ------------------------------------------------------------------ registrar evento (uno o varios paquetes)
   const proposeEvent = tool(
@@ -326,49 +374,7 @@ export const buildActionTools = (user, db) => {
 
   // ------------------------------------------------------------------ asignar paquetes existentes a un viaje
   const proposeAssign = tool(
-    async ({ code, codes, route_ref }) => {
-      try {
-        if (!OPS.includes(user.role)) return DENIED;
-        const parsed = normalizeCodes({ code, codes });
-        if (parsed.error) return parsed.error;
-
-        const found = [];
-        const skipped = [];
-        for (const c of parsed.codes) {
-          const pkg = await findPackage(db, c);
-          if (!pkg) { skipped.push({ code: c, reason: 'no existe' }); continue; }
-          if (!ASSIGNABLE.includes(pkg.status)) { skipped.push({ code: pkg.tracking_code, reason: `está ${STATUS_TEXT[pkg.status].toLowerCase()}; solo se asignan paquetes pendientes o asignados` }); continue; }
-          found.push(pkg);
-        }
-        if (found.length === 0) return `No hay ningún paquete que se pueda asignar (${skipped.map((s) => `${s.code}: ${s.reason}`).join('; ')}).`;
-
-        // el viaje debe estar planeado y tener espacio para TODOS los paquetes juntos
-        const totalKg = Math.round(found.reduce((s, p) => s + (Number(p.peso) || 0), 0) * 10) / 10;
-        const check = await checkRouteForPackage(db, route_ref, totalKg);
-        if (check.error) return check.error;
-
-        // aviso (no bloqueo): el paquete va a otro destino que el viaje
-        const mismatched = found.filter((p) => String(p.destino).toLowerCase() !== String(check.route.destination).toLowerCase());
-        const proposal = createProposal({
-          user,
-          type: 'assign_package',
-          params: { route_id: check.route.id, items: found.map((p) => ({ package_id: p.id, tracking_code: p.tracking_code, peso: Number(p.peso) || 0 })) },
-          title: found.length === 1 ? 'Asignar un paquete a un viaje' : `Asignar ${found.length} paquetes a un viaje`,
-          lines: [
-            `Viaje: ${check.route.origin} → ${check.route.destination}, sale ${whenText(check.route.departure_time)}`,
-            found.length === 1
-              ? `Paquete: ${found[0].tracking_code} (${found[0].origen} → ${found[0].destino}, ${found[0].peso} kg)`
-              : `Paquetes (${found.length}): ${found.map((p) => p.tracking_code).join(', ')} — ${totalKg} kg en total`,
-            ...(check.freeKg != null ? [`Espacio libre del viaje: ${check.freeKg} kg`] : []),
-            ...(mismatched.length ? [`Aviso: ${mismatched.map((p) => `${p.tracking_code} va a ${p.destino}`).join(', ')}, distinto del destino del viaje`] : []),
-            ...omitted(skipped),
-          ],
-        });
-        return proposalResult(proposal, skipped);
-      } catch (e) {
-        return `No se pudo preparar la acción: ${e.message}`;
-      }
-    },
+    async (args) => prepareAssignProposal(user, db, args),
     {
       name: 'propose_assign_package',
       description: `PROPONE asignar uno o varios paquetes ya registrados (pendientes o asignados) a un viaje planeado, comprobando que haya espacio para todos. Hasta ${MAX_BATCH} paquetes con UNA sola confirmación. No lo ejecuta. Solo administradores y operadores. Úsala para "pon estos paquetes en el viaje del viernes" o "asigna TRK-... a ese viaje". El viaje (route_ref) sale de find_available_trips.`,

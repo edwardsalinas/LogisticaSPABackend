@@ -5,6 +5,7 @@ import { defaultExecutors } from './ai-actions.executors.js';
 import supabase from '../../shared/config/supabase.js';
 import { resolveConversation, saveTurn, listConversations, getConversation, deleteConversation } from './ai-conversations.service.js';
 import { recordChat, usageReport } from './ai-audit.service.js';
+import { prepareAssignProposal } from './ai-agent.actions.js';
 
 // Base de datos del historial y la auditoría (se puede sustituir en las pruebas)
 let db = supabase;
@@ -228,5 +229,36 @@ export const handleUsage = async (req, res) => {
   } catch (error) {
     console.error('[AI Usage Error]:', error);
     return res.status(500).json({ success: false, message: 'No se pudo calcular el uso de la IA.' });
+  }
+};
+
+// ============================================================ sugerencias: preparar una asignación sin pasar por el modelo
+const prepareAssignmentSchema = z.object({
+  route_ref: z.string().trim().min(1).max(64),
+  codes: z.array(z.string().trim().min(3).max(64)).min(1).max(10),
+});
+
+/**
+ * Convierte un grupo sugerido en una PROPUESTA (que el usuario confirma). Aplica exactamente las mismas comprobaciones
+ * que la herramienta del agente (permisos, estado, viaje planeado, espacio), pero sin gastar una llamada al modelo.
+ */
+export const handlePrepareAssignment = async (req, res) => {
+  let body;
+  try {
+    body = prepareAssignmentSchema.parse(req.body);
+  } catch (error) {
+    if (error instanceof z.ZodError) return res.status(400).json({ success: false, errors: error.flatten().fieldErrors });
+    throw error;
+  }
+  try {
+    const result = await prepareAssignProposal(req.user, db, { codes: body.codes, route_ref: body.route_ref });
+    let parsed = null;
+    try { parsed = JSON.parse(result); } catch { /* es un mensaje de rechazo */ }
+    if (parsed?.kind === 'action_proposal') return res.status(200).json({ success: true, data: parsed });
+    const denied = /^No tienes permiso/.test(result);
+    return res.status(denied ? 403 : 409).json({ success: false, message: String(result) });
+  } catch (error) {
+    console.error('[AI Suggestion Error]:', error);
+    return res.status(500).json({ success: false, message: 'No se pudo preparar la asignación.' });
   }
 };

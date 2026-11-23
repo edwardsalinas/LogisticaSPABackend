@@ -30,6 +30,10 @@ const GROUPS = {
     tools: ['get_analytics_summary'],
     re: /\b(mes|meses|semana pasada|ultimo mes|analitic\w*|ranking|rendimiento|estadistic\w*|metrica\w*|tendencia\w*|balance|quien entrega|a tiempo|kpi)\b/,
   },
+  suggest: {
+    tools: ['suggest_assignments', 'propose_assign_package'],
+    re: /\b(suelt\w+|sin asignar|sin viaje|sin ruta|sugier\w+|sugerenc\w+|recomiend\w+|optimiz\w+|reparto|repartir|que puedo asignar|asignaciones)\b/,
+  },
   actions: {
     tools: ['propose_register_event', 'propose_deliver_package', 'propose_create_package', 'propose_assign_package'],
     re: /\b(registra\w*|crea\w*|nuevo paquete|entrega\w*|entregar|marca\w*|asigna\w*|evento|agrega\w*|anota\w*|confirma\w*|cancela\w*|despacha\w*|cargar|carga)\b/,
@@ -103,7 +107,14 @@ export const fastPlanFor = (allowed, message) => {
     return { tool: 'get_daily_briefing', args: {} };
   }
 
-  // 3) "¿Qué paquetes tengo?" sin más
+  // 3) "Sugiere asignaciones / paquetes sueltos" (personal)
+  // ("asignaciones" o "asignar" no son una orden; "asigna", "registra", "entrega"... sí, y entonces va el agente completo)
+  if (has('suggest_assignments') && !code && without('fleet', 'analytics') && !/(asigna|registra|crea|entrega|marca|agrega|anota|confirma|cancela|despacha)/.test(t)
+      && /\b(paquetes suelt\w+|carga suelta|sugier\w+ (como )?(las )?asignacion\w*|sugerenc\w+ de asignacion\w*|(que|cuales) paquetes (puedo|debo) asignar|como (reparto|asigno) (los )?paquetes)\b/.test(t)) {
+    return { tool: 'suggest_assignments', args: {} };
+  }
+
+  // 4) "¿Qué paquetes tengo?" sin más
   if (has('list_my_packages') && !code && without('actions', 'ops', 'fleet', 'analytics', 'trips')
       && /\b(que paquetes tengo|mis paquetes|cuales son mis paquetes|que envios tengo|mis envios)\b/.test(t)) {
     return { tool: 'list_my_packages', args: {} };
