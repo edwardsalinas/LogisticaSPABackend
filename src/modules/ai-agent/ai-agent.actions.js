@@ -363,7 +363,7 @@ export const buildActionTools = (user, db) => {
     async (input) => prepareCreateProposal(user, db, input),
     {
       name: 'propose_create_package',
-      description: 'PROPONE registrar un paquete nuevo (origen, destino, peso en kg y nombre del destinatario son obligatorios; teléfono, remitente y descripción son opcionales) y, con route_ref, agendarlo en un viaje concreto. No lo crea: el usuario debe confirmarlo en la tarjeta. Solo administradores y operadores. Si falta algún dato obligatorio, pídeselo al usuario antes de llamarla.',
+      description: 'PROPONE registrar un paquete nuevo (origen, destino, peso en kg y nombre del destinatario son obligatorios; teléfono, remitente y descripción son opcionales) y, con route_ref, agendarlo en un viaje concreto. No lo crea: el usuario debe confirmarlo en la tarjeta. Solo administradores y operadores. Si falta algún dato obligatorio, pídeselo al usuario antes de llamarla. El viaje es OPCIONAL: si el usuario no pidió un viaje concreto, llámala sin route_ref (queda como carga suelta) y NO busques viajes antes.',
       schema: z.object({
         origen: z.string().describe('Ciudad de origen'),
         destino: z.string().describe('Ciudad de destino'),
