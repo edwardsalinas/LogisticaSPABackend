@@ -111,6 +111,13 @@ test('registrar evento en varios: ubicación de cada uno; los que no admiten est
   assert.ok(out.action.lines.includes('Estado nuevo para todos: En agencia'));
   assert.ok(out.action.lines.includes('Nota: Lote 7'));
   assert.deepEqual(out.skipped, [{ code: 'TRK-3', reason: 'ya está entregado' }]);
+  // datos estructurados para que la pantalla muestre cómo se registra (solo los paquetes que sí admiten el evento)
+  const fill = out.action.ui.fill;
+  assert.equal(fill.form, 'event');
+  assert.equal(fill.values.status, 'en_agencia');
+  assert.equal(fill.values.observations, 'Lote 7');
+  assert.deepEqual(fill.values.items.map((i) => i.tracking_code), ['TRK-1', 'TRK-2']);
+  assert.ok(fill.values.items.every((i) => Number.isFinite(i.lat) && Number.isFinite(i.lng)));
 });
 
 test('registrar evento: el mensaje de un solo paquete sigue siendo el de siempre', async () => {
@@ -134,6 +141,12 @@ test('asignar: paquetes pendientes o asignados a un viaje planeado con espacio p
   assert.ok(out.action.lines.some((l) => l.includes('TRK-1, TRK-4') && l.includes('50 kg en total')));
   assert.ok(out.action.lines.includes('Espacio libre del viaje: 70 kg'));
   assert.ok(out.action.lines.some((l) => l.startsWith('Aviso:') && l.includes('TRK-4 va a La Paz')), 'avisa si el destino no coincide');
+  // datos estructurados para que la pantalla muestre cómo se asigna (los mismos que el resumen)
+  const fill = out.action.ui.fill;
+  assert.equal(fill.form, 'assignment');
+  assert.equal(fill.values.items.length, 2);
+  assert.deepEqual(fill.values.items.map((i) => i.tracking_code), ['TRK-1', 'TRK-4']);
+  assert.ok(fill.values.route_id && fill.values.route_text.includes('→'));
 });
 
 test('asignar: no cabe, viaje inexistente, ya iniciado, paquete en curso o sin permiso', async () => {

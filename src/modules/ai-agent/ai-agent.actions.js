@@ -145,6 +145,8 @@ export const prepareAssignProposal = async (user, db, { code, codes, route_ref }
     ...(mismatched.length ? [`Aviso: ${mismatched.map((p) => `${p.tracking_code} va a ${p.destino}`).join(', ')}, distinto del destino del viaje`] : []),
     ...omitted(skipped),
       ],
+      // los mismos datos del resumen, para que la pantalla muestre cómo se hace (Logi guiado)
+      ui: { fill: { form: 'assignment', values: { route_id: check.route.id, route_text: `${check.route.origin} → ${check.route.destination}`, items: found.map((p) => ({ package_id: p.id, tracking_code: p.tracking_code })) } } },
     });
     return proposalResult(proposal, skipped);
   } catch (e) {
@@ -264,6 +266,8 @@ export const buildActionTools = (user, db) => {
           },
           title: items.length === 1 ? 'Registrar evento de seguimiento' : `Registrar evento en ${items.length} paquetes`,
           lines,
+          // los mismos datos del resumen, para que la pantalla muestre cómo se hace (Logi guiado)
+          ui: { fill: { form: 'event', values: { status, observations: observations || undefined, items: items.map(({ package_id, tracking_code, lat, lng }) => ({ package_id, tracking_code, lat, lng })) } } },
         });
         return proposalResult(proposal, skipped);
       } catch (e) {

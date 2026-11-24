@@ -283,7 +283,7 @@ test('las propuestas llegan al navegador como tarjeta (attachment)', () => {
 });
 
 // ============================================================ recibo verificable
-import { buildReceipt } from '../../src/modules/ai-agent/ai-actions.executors.js';
+import { buildReceipt, _rawExecutors } from '../../src/modules/ai-agent/ai-actions.executors.js';
 
 const fakeDb = (packages, routes = []) => ({
   from: (table) => ({
@@ -303,4 +303,11 @@ test('buildReceipt: sin códigos o con error de lectura devuelve vacío y no rom
   assert.deepEqual(await buildReceipt([], fakeDb([])), []);
   const broken = { from: () => ({ select: () => ({ in: async () => ({ data: null, error: new Error('x') }) }) }) };
   assert.deepEqual(await buildReceipt(['TRK-1'], broken), []);
+});
+
+// Regresión: el ejecutor de «asignar» usaba `user` (el actor que queda en el historial) sin recibirlo y fallaba SIEMPRE
+// con «user is not defined». Todo ejecutor recibe (parámetros, usuario).
+test('todos los ejecutores de acciones reciben (parámetros, usuario)', () => {
+  assert.deepEqual(Object.keys(_rawExecutors).sort(), ['assign_package', 'create_package', 'deliver_package', 'register_tracking_event']);
+  for (const [name, fn] of Object.entries(_rawExecutors)) assert.equal(fn.length, 2, `${name} debe declarar (p, user)`);
 });

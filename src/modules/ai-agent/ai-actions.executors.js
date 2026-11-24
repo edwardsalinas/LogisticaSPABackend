@@ -78,7 +78,7 @@ const rawExecutors = {
     return { message: `Paquete creado con el código ${created.tracking_code}${where}.`, data: { tracking_code: created.tracking_code } };
   },
 
-  async assign_package(p) {
+  async assign_package(p, user) {
     // Se vuelve a comprobar AHORA: entre proponer y confirmar el viaje pudo llenarse o iniciar
     const totalKg = p.items.reduce((s, i) => s + (i.peso || 0), 0);
     const check = await checkRouteForPackage(supabase, p.route_id, totalKg);
@@ -145,4 +145,6 @@ const withReceipt = (fn) => async (params, user) => {
   return result;
 };
 
+/** Solo para pruebas: los ejecutores sin envolver. */
+export const _rawExecutors = rawExecutors;
 export const defaultExecutors = Object.fromEntries(Object.entries(rawExecutors).map(([k, fn]) => [k, withReceipt(fn)]));
