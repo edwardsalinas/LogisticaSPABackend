@@ -80,6 +80,7 @@ test('entregar varios: una sola propuesta con los válidos y la lista de omitido
   assert.match(omitted, /TRK-5 \(está cancelado/);
   assert.deepEqual(out.skipped.map((s) => s.code).sort(), ['TRK-3', 'TRK-5', 'TRK-X']);
   assert.match(out.instruction, /Menciona también lo que se omitió/);
+  assert.equal(out.action.ui, undefined, 'personal y cliente no tienen pantalla de entrega: sin datos para Logi guiado');
   assert.equal(db.calls.filter((c) => c.table === 'packages').length, 5); // solo consultó
 });
 
@@ -93,6 +94,9 @@ test('entregar varios: un conductor solo incluye paquetes de SUS rutas y se dice
   const db = withPackages({ transport_routes: { data: [{ driver_id: 'd1' }] } });
   const own = parse(await run(DRIVER, 'propose_deliver_package', { codes: ['TRK-1'] }, db));
   assert.equal(own.action.title, 'Confirmar entrega de un paquete');
+  // el conductor tiene una pantalla de entrega que Logi puede mostrar: la propuesta trae sus datos estructurados
+  assert.equal(own.action.ui.fill.form, 'delivery');
+  assert.deepEqual(own.action.ui.fill.values.items.map((i) => i.tracking_code), ['TRK-1']);
 
   // TRK-4 no tiene ruta: no es suyo
   const mixed = parse(await run(DRIVER, 'propose_deliver_package', { codes: ['TRK-1', 'TRK-4'] }, db));

@@ -347,6 +347,10 @@ export const buildActionTools = (user, db) => {
           params: { items: items.map((p) => ({ package_id: p.id, tracking_code: p.tracking_code })), note: observations || undefined },
           title: items.length === 1 ? 'Confirmar entrega de un paquete' : `Confirmar entrega de ${items.length} paquetes`,
           lines,
+          // solo el conductor tiene una pantalla de entrega que mostrar (Logi guiado); personal y cliente confirman con el botón
+          ...(user.role === 'driver'
+            ? { ui: { fill: { form: 'delivery', values: { note: observations || undefined, items: items.map((p) => ({ package_id: p.id, tracking_code: p.tracking_code })) } } } }
+            : {}),
         });
         return proposalResult(proposal, skipped);
       } catch (e) {
