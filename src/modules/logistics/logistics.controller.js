@@ -6,7 +6,7 @@ export const handleCreatePackage = async (req, res) => {
   try {
     const validatedData = packageSchema.parse(req.body);
     const senderId = validatedData.sender_id || req.user.id;
-    const result = await LogisticsService.createPackage(validatedData, senderId);
+    const result = await LogisticsService.createPackage(validatedData, senderId, { actor: req.user });
     return res.status(201).json({ success: true, data: result });
   } catch (error) {
     if (error instanceof z.ZodError) return res.status(400).json({ success: false, errors: error.flatten().fieldErrors });
@@ -63,7 +63,7 @@ export const handleAssignPackage = async (req, res) => {
       package_id: req.body.package_id,
       route_id: req.params.id
     });
-    const result = await LogisticsService.assignPackageToRoute(package_id, route_id);
+    const result = await LogisticsService.assignPackageToRoute(package_id, route_id, { actor: req.user });
     return res.status(200).json({ success: true, data: result });
   } catch (error) {
     if (error instanceof z.ZodError) return res.status(400).json({ success: false, errors: error.flatten().fieldErrors });

@@ -9,7 +9,43 @@ import { PACKAGE_STATUS, ROUTE_STATUS } from './logistics.schema.js';
 // Código de seguimiento: marca de tiempo + 32 bits aleatorios criptográficos (antes: Math.random, predecible)
 export const generateTrackingCode = () => `TRK-${Date.now()}-${randomBytes(4).toString('hex').toUpperCase()}`;
 
-export const createPackage = async (data, userId) => {
+const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
+
+/**
+ * Posición para el evento de custodia de un paquete que aún no tiene GPS: el origen de su viaje, o la ciudad de
+ * origen (tabla de rutas predefinidas). Si no hay ninguna, (0, 0), igual que la entrega (tracking_logs exige coordenadas).
+ */
+export const custodyLocation = async (pkg, db = supabase) => {
+  if (pkg.route_id) {
+    const { data: route } = await db.from('transport_routes').select('origin_lat, origin_lng').eq('id', pkg.route_id).maybeSingle();
+    if (route && isNum(route.origin_lat) && isNum(route.origin_lng)) return { lat: route.origin_lat, lng: route.origin_lng };
+  }
+  const { data: asOrigin } = await db.from('predefined_routes').select('origin_lat, origin_lng').eq('origin_city', pkg.origen).limit(1).maybeSingle();
+  if (asOrigin && isNum(asOrigin.origin_lat) && isNum(asOrigin.origin_lng)) return { lat: asOrigin.origin_lat, lng: asOrigin.origin_lng };
+  const { data: asDest } = await db.from('predefined_routes').select('dest_lat, dest_lng').eq('destination_city', pkg.origen).limit(1).maybeSingle();
+  if (asDest && isNum(asDest.dest_lat) && isNum(asDest.dest_lng)) return { lat: asDest.dest_lat, lng: asDest.dest_lng };
+  return { lat: 0, lng: 0 };
+};
+
+/**
+ * Cadena de custodia (RF03): deja en el historial QUIÉN registró o asignó el paquete y cuándo. Devuelve el error si
+ * no se pudo escribir, para que quien llama revierta el cambio (sin constancia no hay cambio).
+ */
+export const recordCustodyEvent = async ({ pkg, status, actor, observations = null, db = supabase }) => {
+  const position = await custodyLocation(pkg, db);
+  const { error } = await db.from('tracking_logs').insert({
+    package_id: pkg.id,
+    lat: position.lat,
+    lng: position.lng,
+    status,
+    observations,
+    recorded_by: actor?.id ?? null,
+    timestamp: new Date().toISOString(),
+  });
+  return error ?? null;
+};
+
+export const createPackage = async (data, userId, { actor = null } = {}) => {
   const { 
     origen, destino, peso, description, route_id,
     sender_id, sender_name, sender_phone,
@@ -52,6 +88,17 @@ export const createPackage = async (data, userId) => {
     .single();
 
   if (error) throw error;
+
+  // Primer eslabón de la cadena de custodia: quién registró el paquete. Sin constancia no se deja el paquete creado.
+  const custodyError = await recordCustodyEvent({ pkg: inserted, status: 'Pendiente', actor: actor ?? { id: userId } });
+  if (custodyError) {
+    await supabase.from('packages').delete().eq('id', inserted.id);
+    throw custodyError;
+  }
+  if (route_id) {
+    const assignedError = await recordCustodyEvent({ pkg: inserted, status: initialStatus === PACKAGE_STATUS.IN_TRANSIT ? 'En tránsito' : 'Asignado', actor: actor ?? { id: userId } });
+    if (assignedError) console.error('[Logistics] No se pudo registrar la asignación inicial:', assignedError.message);
+  }
   return inserted;
 };
 
@@ -139,7 +186,8 @@ export const getRoutes = async (filters = {}) => {
 /**
  * Asigna un paquete a una ruta
  */
-export const assignPackageToRoute = async (packageId, routeId) => {
+export const assignPackageToRoute = async (packageId, routeId, { actor = null } = {}) => {
+  const { data: before } = await supabase.from('packages').select('route_id, status').eq('id', packageId).maybeSingle();
   const { data: activeTrip } = await supabase
     .from('driver_trips')
     .select('id')
@@ -160,6 +208,13 @@ export const assignPackageToRoute = async (packageId, routeId) => {
     .single();
 
   if (error) throw error;
+
+  // Segundo eslabón: quién asignó el paquete al viaje. Sin constancia se deshace la asignación.
+  const custodyError = await recordCustodyEvent({ pkg: updated, status: newStatus === PACKAGE_STATUS.IN_TRANSIT ? 'En tránsito' : 'Asignado', actor, observations: 'Asignado al viaje' });
+  if (custodyError) {
+    await supabase.from('packages').update({ route_id: before?.route_id ?? null, status: before?.status ?? PACKAGE_STATUS.PENDING }).eq('id', packageId);
+    throw custodyError;
+  }
   return updated;
 };
 

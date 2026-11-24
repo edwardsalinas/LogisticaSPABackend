@@ -73,7 +73,7 @@ const rawExecutors = {
   },
 
   async create_package(p, user) {
-    const created = await LogisticsService.createPackage(p.data, user.id);
+    const created = await LogisticsService.createPackage(p.data, user.id, { actor: user });
     const where = p.data.route_id ? ' y agendado en el viaje elegido' : '';
     return { message: `Paquete creado con el código ${created.tracking_code}${where}.`, data: { tracking_code: created.tracking_code } };
   },
@@ -89,7 +89,7 @@ const rawExecutors = {
       if (!current || !ASSIGNABLE.includes(current.status)) {
         throw Object.assign(new Error('ya no se puede asignar (cambió de estado)'), { status: 409 });
       }
-      await LogisticsService.assignPackageToRoute(item.package_id, p.route_id);
+      await LogisticsService.assignPackageToRoute(item.package_id, p.route_id, { actor: user });
     });
     return summarize(outcome, {
       one: (code) => `Paquete ${code} asignado al viaje.`,
