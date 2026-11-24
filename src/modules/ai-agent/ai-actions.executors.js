@@ -52,7 +52,7 @@ export const summarize = ({ results, errors }, { one, many }) => {
   return { message: `${many(ok.length, results.length)}${tail}`, data: { results } };
 };
 
-export const defaultExecutors = {
+const rawExecutors = {
   async register_tracking_event(p, user) {
     const outcome = await runBatch(p.items, (item) =>
       TrackingService.logEvent({ package_id: item.package_id, lat: item.lat, lng: item.lng, status: p.status, observations: p.observations }, user)
@@ -97,3 +97,52 @@ export const defaultExecutors = {
     });
   },
 };
+
+/**
+ * Recibo verificable: DESPUÉS de ejecutar, vuelve a leer de la base los paquetes tocados y devuelve su estado real
+ * (no lo que dijo el modelo ni lo que el ejecutor creyó hacer). La interfaz lo muestra con un enlace a la ficha.
+ * Si la lectura falla, no se pierde el resultado de la acción: simplemente no hay recibo.
+ */
+export const buildReceipt = async (codes, db = supabase) => {
+  const list = [...new Set(codes.filter(Boolean))];
+  if (list.length === 0) return [];
+  const { data, error } = await db
+    .from('packages')
+    .select('id, tracking_code, status, origen, destino, peso, recipient_name, route_id')
+    .in('tracking_code', list);
+  if (error || !data) return [];
+
+  const routeIds = [...new Set(data.map((p) => p.route_id).filter(Boolean))];
+  let routes = {};
+  if (routeIds.length) {
+    const { data: rows } = await db.from('transport_routes').select('id, origin, destination').in('id', routeIds);
+    routes = Object.fromEntries((rows ?? []).map((r) => [r.id, `${r.origin} → ${r.destination}`]));
+  }
+  return data.map((p) => ({
+    id: p.id,
+    tracking_code: p.tracking_code,
+    status: p.status,
+    origen: p.origen,
+    destino: p.destino,
+    peso: p.peso,
+    recipient_name: p.recipient_name,
+    trip: p.route_id ? routes[p.route_id] ?? null : null,
+  }));
+};
+
+const withReceipt = (fn) => async (params, user) => {
+  const result = await fn(params, user);
+  const codes = [
+    result.data?.tracking_code,
+    ...(result.data?.results ?? []).filter((r) => r.ok).map((r) => r.tracking_code),
+  ];
+  try {
+    const records = await buildReceipt(codes);
+    if (records.length) result.data = { ...(result.data ?? {}), records };
+  } catch (error) {
+    console.error('[AI Action] no se pudo armar el recibo:', error.message);
+  }
+  return result;
+};
+
+export const defaultExecutors = Object.fromEntries(Object.entries(rawExecutors).map(([k, fn]) => [k, withReceipt(fn)]));

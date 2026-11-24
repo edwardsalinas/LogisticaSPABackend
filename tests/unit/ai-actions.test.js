@@ -271,3 +271,26 @@ test('las propuestas llegan al navegador como tarjeta (attachment)', () => {
   const msgs = [{ type: 'tool', content: JSON.stringify({ kind: 'action_proposal', action: { id: 'a', title: 't', lines: [] } }) }];
   assert.deepEqual(extractAttachments(msgs).map((a) => a.kind), ['action_proposal']);
 });
+
+// ============================================================ recibo verificable
+import { buildReceipt } from '../../src/modules/ai-agent/ai-actions.executors.js';
+
+const fakeDb = (packages, routes = []) => ({
+  from: (table) => ({
+    select: () => ({ in: async () => ({ data: table === 'packages' ? packages : routes, error: null }) }),
+  }),
+});
+
+test('buildReceipt: devuelve el estado real leído de la base, con el viaje si lo tiene', async () => {
+  const db = fakeDb([{ id: 'p1', tracking_code: 'TRK-1', status: 'asignado', origen: 'La Paz', destino: 'Oruro', peso: 3, recipient_name: 'Ana', route_id: 'r1' }], [{ id: 'r1', origin: 'La Paz', destination: 'Oruro' }]);
+  const [rec] = await buildReceipt(['TRK-1', 'TRK-1', null], db);
+  assert.equal(rec.id, 'p1');
+  assert.equal(rec.status, 'asignado');
+  assert.equal(rec.trip, 'La Paz → Oruro');
+});
+
+test('buildReceipt: sin códigos o con error de lectura devuelve vacío y no rompe', async () => {
+  assert.deepEqual(await buildReceipt([], fakeDb([])), []);
+  const broken = { from: () => ({ select: () => ({ in: async () => ({ data: null, error: new Error('x') }) }) }) };
+  assert.deepEqual(await buildReceipt(['TRK-1'], broken), []);
+});
