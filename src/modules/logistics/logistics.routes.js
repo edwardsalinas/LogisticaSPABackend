@@ -95,6 +95,9 @@ router.delete('/routes/:id', requireRole(['admin', 'logistics_operator']), Logis
  */
 router.post('/routes/:id/assign', requireRole(['admin', 'logistics_operator']), LogisticsController.handleAssignPackage);
 
+/** Deshace la asignación de un paquete (vuelve a pendientes) mientras su viaje no haya salido. Lo usa el «Deshacer» de Logi. */
+router.post('/packages/:id/unassign', requireRole(['admin', 'logistics_operator']), LogisticsController.handleUnassignPackage);
+
 /**
  * @swagger
  * /api/logistics/predefined-routes:

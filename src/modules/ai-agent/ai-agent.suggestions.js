@@ -88,25 +88,29 @@ export const planAssignments = ({ packages, trips, now = Date.now() }) => {
   return { groups, unassigned };
 };
 
+/** Lee los paquetes sueltos y los viajes planeados y calcula el reparto. La usan la herramienta del agente y los avisos de Logi. */
+export const loadAssignmentPlan = async (db, now = Date.now()) => {
+  const [loose, routes] = await Promise.all([
+    db.from('packages').select('tracking_code, origen, destino, peso, recipient_name, created_at')
+      .is('route_id', null).eq('status', 'pendiente').order('created_at', { ascending: true }).limit(MAX_LOOSE),
+    db.from('transport_routes').select('id, route_code, origin, destination, status, departure_time, estimated_arrival, vehicle_id')
+      .eq('status', 'planeada').gte('departure_time', new Date(now).toISOString()).lte('departure_time', new Date(now + HORIZON_DAYS * DAY_MS).toISOString())
+      .order('departure_time', { ascending: true }).limit(MAX_TRIPS),
+  ]);
+  if (loose.error) throw loose.error;
+  if (routes.error) throw routes.error;
+  const packages = loose.data || [];
+  const trips = packages.length ? await enrichTrips(db, routes.data || []) : [];
+  return { packages, ...planAssignments({ packages, trips, now }) };
+};
+
 export const buildSuggestionTools = (user, db) => {
   const suggestAssignments = tool(
     async () => {
       try {
         if (!OPS.includes(user.role)) return 'No tienes permiso para consultar esa información.';
         const now = Date.now();
-        const [loose, routes] = await Promise.all([
-          db.from('packages').select('tracking_code, origen, destino, peso, recipient_name, created_at')
-            .is('route_id', null).eq('status', 'pendiente').order('created_at', { ascending: true }).limit(MAX_LOOSE),
-          db.from('transport_routes').select('id, route_code, origin, destination, status, departure_time, estimated_arrival, vehicle_id')
-            .eq('status', 'planeada').gte('departure_time', new Date(now).toISOString()).lte('departure_time', new Date(now + HORIZON_DAYS * DAY_MS).toISOString())
-            .order('departure_time', { ascending: true }).limit(MAX_TRIPS),
-        ]);
-        if (loose.error) throw loose.error;
-        if (routes.error) throw routes.error;
-
-        const packages = loose.data || [];
-        const trips = packages.length ? await enrichTrips(db, routes.data || []) : [];
-        const { groups, unassigned } = planAssignments({ packages, trips, now });
+        const { packages, groups, unassigned } = await loadAssignmentPlan(db, now);
         return JSON.stringify({
           kind: 'assignment_suggestions',
           total_loose: packages.length,

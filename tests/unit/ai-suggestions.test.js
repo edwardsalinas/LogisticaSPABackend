@@ -117,6 +117,9 @@ test('no modifica los datos de entrada', () => {
 });
 
 // ============================================================ herramienta
+// la herramienta usa Date.now() (reloj real): sus viajes de ejemplo se definen respecto a él, no al NOW fijo de arriba
+const hReal = (hours) => new Date(Date.now() + hours * 3600 * 1000).toISOString();
+
 const makeDb = ({ loose = [], routes = [], vehicles = [], loads = [] } = {}) => ({
   from: (table) => {
     const b = {
@@ -138,7 +141,7 @@ const run = (user, db) => buildSuggestionTools(user, db)[0].invoke({});
 test('la herramienta devuelve grupos, lo que no se pudo asignar y un aviso de que no se asignó nada', async () => {
   const db = makeDb({
     loose: [pkg('TRK-1', 10), pkg('TRK-9', 5, { destino: 'Sucre' })],
-    routes: [{ id: 'r1', route_code: 'RT-1', origin: 'Cochabamba', destination: 'La Paz', departure_time: h(24), vehicle_id: 'v1' }],
+    routes: [{ id: 'r1', route_code: 'RT-1', origin: 'Cochabamba', destination: 'La Paz', departure_time: hReal(24), vehicle_id: 'v1' }],
     vehicles: [{ id: 'v1', plate: 'ABC-123', brand: 'Volvo', model: 'FH16', capacity_kg: 1000 }],
     loads: [{ route_id: 'r1', peso: 100 }],
   });
@@ -175,7 +178,7 @@ const PKGS = {
   'TRK-1': { id: 'p1', tracking_code: 'TRK-1', status: 'pendiente', origen: 'Cochabamba', destino: 'La Paz', peso: 10, route_id: null },
   'TRK-2': { id: 'p2', tracking_code: 'TRK-2', status: 'entregado', origen: 'Cochabamba', destino: 'La Paz', peso: 10, route_id: null },
 };
-const assignDb = (route = { id: 'r1', route_code: 'RT-1', origin: 'Cochabamba', destination: 'La Paz', status: 'planeada', departure_time: h(24), vehicle_id: 'v1' }, freeCapacity = 1000) => ({
+const assignDb = (route = { id: 'r1', route_code: 'RT-1', origin: 'Cochabamba', destination: 'La Paz', status: 'planeada', departure_time: hReal(24), vehicle_id: 'v1' }, freeCapacity = 1000) => ({
   from: (table) => {
     const entry = { eq: [] };
     const b = {

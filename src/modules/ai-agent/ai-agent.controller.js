@@ -4,7 +4,8 @@ import { confirmProposal, cancelProposal } from './ai-actions.service.js';
 import { defaultExecutors } from './ai-actions.executors.js';
 import supabase from '../../shared/config/supabase.js';
 import { resolveConversation, saveTurn, listConversations, getConversation, deleteConversation } from './ai-conversations.service.js';
-import { recordChat, usageReport } from './ai-audit.service.js';
+import { recordChat, recordLogiEvent, usageReport, LOGI_EVENTS } from './ai-audit.service.js';
+import { buildAlerts } from './ai-agent.alerts.js';
 import { prepareAssignProposal, prepareCreateProposal } from './ai-agent.actions.js';
 import { validateImage, extractFromImage } from './ai-agent.documents.js';
 
@@ -231,6 +232,31 @@ export const handleUsage = async (req, res) => {
     console.error('[AI Usage Error]:', error);
     return res.status(500).json({ success: false, message: 'No se pudo calcular el uso de la IA.' });
   }
+};
+
+// ============================================================ avisos proactivos y eventos de Logi
+/** Excepciones reales de la operación (retrasos, paquetes sueltos con viaje, viajes sin conductor). Solo personal. */
+export const handleAlerts = async (req, res) => {
+  try {
+    const alerts = await buildAlerts(req.user, db);
+    return res.status(200).json({ success: true, data: alerts });
+  } catch (error) {
+    console.error('[AI Alerts Error]:', error);
+    return res.status(500).json({ success: false, message: 'No se pudieron calcular los avisos.' });
+  }
+};
+
+const logiEventSchema = z.object({
+  event: z.enum(LOGI_EVENTS),
+  type: z.string().trim().max(40).regex(/^[a-z_]+$/).optional(),
+});
+
+/** Registra un evento de uso de Logi (solo métricas: qué pasó y de qué tipo, nunca contenido). */
+export const handleLogiEvent = async (req, res) => {
+  const parsed = logiEventSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ success: false, errors: parsed.error.flatten().fieldErrors });
+  await recordLogiEvent(db, { userId: req.user.id, role: req.user.role, ...parsed.data });
+  return res.status(204).end();
 };
 
 // ============================================================ sugerencias: preparar una asignación sin pasar por el modelo

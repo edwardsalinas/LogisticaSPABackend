@@ -33,6 +33,27 @@ export const recordChat = async (db, entry) => {
   }
 };
 
+// Eventos de Logi (avisos mostrados, aceptados, acciones hechas…). Se guardan en la misma tabla de auditoría con model = 'logi'
+// y el nombre del evento en `tools` (sin migración nueva y, como todo lo demás, sin contenido de nadie).
+export const LOGI_MODEL = 'logi';
+export const LOGI_EVENTS = ['alert_shown', 'alert_accepted', 'alert_snoozed', 'alert_muted', 'guided_started', 'guided_done', 'guided_stopped', 'guided_fallback', 'demo_done'];
+
+/** Guarda un evento de Logi. Nunca lanza. */
+export const recordLogiEvent = async (db, { userId, role, event, type }) => {
+  try {
+    const { error } = await db.from('ai_chat_audit').insert({
+      user_id: userId ?? null,
+      user_role: role ?? null,
+      model: LOGI_MODEL,
+      tools: type ? [event, type] : [event],
+      status: 'ok',
+    });
+    if (error) throw error;
+  } catch (e) {
+    console.error('[AI Audit] No se pudo registrar el evento de Logi:', e.message);
+  }
+};
+
 const percentile = (sorted, p) => (sorted.length ? sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * p))] : 0);
 const avg = (list) => (list.length ? Math.round(list.reduce((a, b) => a + b, 0) / list.length) : 0);
 const pct = (n, d) => (d ? Math.round((n / d) * 1000) / 10 : 0);
@@ -97,6 +118,30 @@ export const summarize = (rows, { days, now = Date.now() } = {}) => {
   };
 };
 
+/** Cifras de Logi a partir de sus eventos (función pura). */
+export const summarizeLogi = (rows) => {
+  const count = (event, type) => rows.filter((r) => r.tools?.[0] === event && (type == null || r.tools?.[1] === type)).length;
+  const types = [...new Set(rows.filter((r) => String(r.tools?.[0]).startsWith('alert_')).map((r) => r.tools?.[1]).filter(Boolean))];
+  const shown = count('alert_shown');
+  const accepted = count('alert_accepted');
+  const started = count('guided_started');
+  const done = count('guided_done');
+  return {
+    alerts_shown: shown,
+    alerts_accepted: accepted,
+    alerts_snoozed: count('alert_snoozed'),
+    alerts_muted: count('alert_muted'),
+    alerts_accepted_pct: pct(accepted, shown),
+    guided_started: started,
+    guided_done: done,
+    guided_stopped: count('guided_stopped'),
+    guided_fallback: count('guided_fallback'),
+    guided_done_pct: pct(done, started),
+    demos: count('demo_done'),
+    by_alert_type: types.map((type) => ({ type, shown: count('alert_shown', type), accepted: count('alert_accepted', type) })),
+  };
+};
+
 /** Informe de uso de los últimos `days` días (máximo 90). */
 export const usageReport = async (db, { days = 7, now = Date.now() } = {}) => {
   const span = Math.min(Math.max(1, Number(days) || 7), 90);
@@ -108,6 +153,9 @@ export const usageReport = async (db, { days = 7, now = Date.now() } = {}) => {
     .order('created_at', { ascending: false })
     .limit(MAX_ROWS);
   if (error) throw error;
-  const rows = data ?? [];
-  return { days: span, from, truncated: rows.length >= MAX_ROWS, ...summarize(rows, { days: span, now }) };
+  const all = data ?? [];
+  // los eventos de Logi no son consultas al asistente: no cuentan en sus cifras, tienen las suyas
+  const rows = all.filter((r) => r.model !== LOGI_MODEL);
+  const logiRows = all.filter((r) => r.model === LOGI_MODEL);
+  return { days: span, from, truncated: all.length >= MAX_ROWS, ...summarize(rows, { days: span, now }), logi: summarizeLogi(logiRows) };
 };

@@ -219,6 +219,32 @@ export const assignPackageToRoute = async (packageId, routeId, { actor = null } 
 };
 
 /**
+ * Deshace una asignación: el paquete vuelve a «pendiente» y sin viaje. Solo mientras siga «asignado» y su viaje no haya
+ * salido (un paquete en tránsito, entregado o de un viaje en curso ya no se puede devolver). Queda constancia de quién lo
+ * deshizo, igual que al asignar.
+ */
+export const unassignPackageFromRoute = async (packageId, { actor = null, db = supabase } = {}) => {
+  const fail = (status, message) => Object.assign(new Error(message), { status });
+  const { data: pkg } = await db.from('packages').select('*').eq('id', packageId).maybeSingle();
+  if (!pkg) throw fail(404, 'No se encontró el paquete.');
+  if (pkg.status !== PACKAGE_STATUS.ASSIGNED || !pkg.route_id) {
+    throw fail(409, 'Solo se puede deshacer la asignación de un paquete que sigue «asignado» a un viaje.');
+  }
+  const { data: route } = await db.from('transport_routes').select('status').eq('id', pkg.route_id).maybeSingle();
+  if (route && route.status !== 'planeada') throw fail(409, 'El viaje ya salió: el paquete no se puede devolver a pendientes.');
+
+  const { data: updated, error } = await db.from('packages').update({ route_id: null, status: PACKAGE_STATUS.PENDING }).eq('id', packageId).select().single();
+  if (error) throw error;
+
+  const custodyError = await recordCustodyEvent({ pkg: updated, status: 'Pendiente', actor, observations: 'Asignación deshecha', db });
+  if (custodyError) {
+    await db.from('packages').update({ route_id: pkg.route_id, status: pkg.status }).eq('id', packageId);
+    throw custodyError;
+  }
+  return updated;
+};
+
+/**
  * Automatización: Escuchar entrega de paquetes
  */
 eventBus.subscribe('tracking:package_delivered', async ({ packageId }) => {

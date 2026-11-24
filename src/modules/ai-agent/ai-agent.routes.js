@@ -12,6 +12,12 @@ router.get('/pool', requireRole(['admin']), AiAgentController.handlePoolStatus);
 /** Uso de la IA: consultas, aciertos, tiempos y tokens por modelo y por día (administradores; sin contenido de conversaciones). */
 router.get('/usage', requireRole(['admin']), AiAgentController.handleUsage);
 
+/** Avisos proactivos de Logi: excepciones reales de la operación (solo administradores y operadores; sin modelo de IA). */
+router.get('/alerts', requireRole(['admin', 'logistics_operator']), AiAgentController.handleAlerts);
+
+/** Eventos de uso de Logi (avisos aceptados, acciones hechas…) para las métricas del panel de uso. Solo cuentan eventos, no contenido. */
+router.post('/logi-events', AiAgentController.handleLogiEvent);
+
 /** Historial: cada usuario ve, abre y borra solo SUS conversaciones. */
 router.get('/conversations', AiAgentController.handleListConversations);
 router.get('/conversations/:id', AiAgentController.handleGetConversation);
