@@ -244,6 +244,33 @@ export const unassignPackageFromRoute = async (packageId, { actor = null, db = s
   return updated;
 };
 
+/** Ventana para anular un paquete recién creado desde «Deshacer»: pasada, ya es un registro con historia. */
+export const CANCEL_WINDOW_MS = 2 * 60 * 60 * 1000;
+
+/**
+ * Deshacer la creación de un paquete: lo marca «cancelado» (no se borra, queda el historial). Solo si sigue «pendiente»,
+ * sin viaje y se creó hace poco; si ya se asignó, salió o pasó la ventana, hay que gestionarlo por el flujo normal.
+ */
+export const cancelNewPackage = async (packageId, { actor = null, db = supabase, now = Date.now() } = {}) => {
+  const fail = (status, message) => Object.assign(new Error(message), { status });
+  const { data: pkg } = await db.from('packages').select('*').eq('id', packageId).maybeSingle();
+  if (!pkg) throw fail(404, 'No se encontró el paquete.');
+  if (pkg.status !== PACKAGE_STATUS.PENDING || pkg.route_id) {
+    throw fail(409, 'Solo se puede anular un paquete que sigue «pendiente» y sin viaje.');
+  }
+  if (pkg.created_at && now - new Date(pkg.created_at).getTime() > CANCEL_WINDOW_MS) {
+    throw fail(409, 'El paquete se creó hace más de 2 horas: ya no se puede anular desde aquí.');
+  }
+  const { data: updated, error } = await db.from('packages').update({ status: PACKAGE_STATUS.CANCELLED }).eq('id', packageId).select().single();
+  if (error) throw error;
+  const custodyError = await recordCustodyEvent({ pkg: updated, status: 'Cancelado', actor, observations: 'Creación deshecha', db });
+  if (custodyError) {
+    await db.from('packages').update({ status: pkg.status }).eq('id', packageId);
+    throw custodyError;
+  }
+  return updated;
+};
+
 /**
  * Automatización: Escuchar entrega de paquetes
  */

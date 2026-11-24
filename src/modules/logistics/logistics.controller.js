@@ -80,6 +80,15 @@ export const handleUnassignPackage = async (req, res) => {
   }
 };
 
+export const handleCancelPackage = async (req, res) => {
+  try {
+    const result = await LogisticsService.cancelNewPackage(req.params.id, { actor: req.user });
+    return res.status(200).json({ success: true, data: result });
+  } catch (error) {
+    return res.status(error.status ?? 500).json({ success: false, message: error.message });
+  }
+};
+
 export const handleGetPredefinedRoutes = async (req, res) => {
   try {
     const result = await LogisticsService.getPredefinedRoutes();
