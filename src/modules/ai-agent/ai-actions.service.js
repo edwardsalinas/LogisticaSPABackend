@@ -33,10 +33,17 @@ const purgeExpired = (now = Date.now()) => {
   for (const [id, p] of store) if (p.expiresAt <= now) store.delete(id);
 };
 
-/** Datos que se envían al navegador: nunca los parámetros internos ni el dueño. */
-const toPublic = (p) => ({ id: p.id, type: p.type, title: p.title, lines: p.lines, expires_at: new Date(p.expiresAt).toISOString() });
+/**
+ * Datos que se envían al navegador: nunca los parámetros internos ni el dueño.
+ * `ui` (opcional) son los mismos datos que ya muestra el resumen, en forma estructurada, para que la pantalla pueda
+ * mostrar cómo se hace la acción (Logi llena el formulario). No sustituye a la confirmación: quien ejecuta es el servidor.
+ */
+const toPublic = (p) => ({
+  id: p.id, type: p.type, title: p.title, lines: p.lines, expires_at: new Date(p.expiresAt).toISOString(),
+  ...(p.ui ? { ui: p.ui } : {}),
+});
 
-export const createProposal = ({ user, type, params, title, lines }, now = Date.now()) => {
+export const createProposal = ({ user, type, params, title, lines, ui }, now = Date.now()) => {
   if (!ACTION_ROLES[type]) throw httpError(400, 'Acción desconocida');
   if (!ACTION_ROLES[type].includes(user.role)) throw httpError(403, 'No tienes permiso para esta acción');
   purgeExpired(now);
@@ -45,7 +52,7 @@ export const createProposal = ({ user, type, params, title, lines }, now = Date.
   const mine = [...store.values()].filter((p) => p.userId === user.id && p.status === 'pending').sort((a, b) => a.createdAt - b.createdAt);
   while (mine.length >= MAX_PENDING_PER_USER) store.delete(mine.shift().id);
 
-  const proposal = { id: randomUUID(), userId: user.id, type, params, title, lines, status: 'pending', createdAt: now, expiresAt: now + ACTION_TTL_MS };
+  const proposal = { id: randomUUID(), userId: user.id, type, params, title, lines, ui, status: 'pending', createdAt: now, expiresAt: now + ACTION_TTL_MS };
   store.set(proposal.id, proposal);
   return toPublic(proposal);
 };

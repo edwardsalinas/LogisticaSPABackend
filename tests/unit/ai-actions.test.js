@@ -34,6 +34,16 @@ test('la propuesta pública no expone los parámetros internos ni al dueño', ()
   assert.match(p.id, /^[0-9a-f-]{36}$/);
 });
 
+test('la propuesta puede llevar los datos del resumen en forma estructurada (ui), sin exponer lo interno', () => {
+  const p = createProposal({
+    user: ADMIN, type: 'create_package', params: { data: { secreto: 'x' } }, title: 't', lines: ['l'],
+    ui: { fill: { form: 'package', values: { origen: 'La Paz' } } },
+  });
+  assert.deepEqual(p.ui, { fill: { form: 'package', values: { origen: 'La Paz' } } });
+  assert.equal(JSON.stringify(p).includes('secreto'), false);
+  assert.equal('params' in p, false);
+});
+
 test('crear una propuesta exige un tipo conocido y un rol permitido', () => {
   assert.throws(() => createProposal({ user: ADMIN, type: 'borrar_todo', params: {}, title: 't', lines: [] }), (e) => e.status === 400);
   assert.throws(() => propose({ id: 'c1', role: 'client' }), (e) => e.status === 403);

@@ -196,6 +196,8 @@ export const prepareCreateProposal = async (user, db, input) => {
         ...(d.sender_name ? [`Remitente: ${d.sender_name}${d.sender_phone ? ` (${d.sender_phone})` : ''}`] : []),
         ...(d.description ? [`Descripción: ${d.description}`] : []),
       ],
+      // los mismos datos del resumen, para que la pantalla muestre cómo se llena el formulario (Logi guiado)
+      ui: { fill: { form: 'package', values: d } },
     });
     return proposalResult(proposal);
   } catch (e) {
