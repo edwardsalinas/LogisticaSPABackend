@@ -4,11 +4,11 @@
  *   node --env-file=.env scripts/seed-demo.mjs            # crea los datos
  *   node --env-file=.env scripts/seed-demo.mjs --remove   # los borra (solo los marcados DEMO-LOGI)
  *
- * Crea: un viaje La Paz → Oruro de mañana con conductor y 3 paquetes sueltos del mismo trayecto (aviso «Paquetes sueltos»),
- * un viaje Cochabamba → Santa Cruz de mañana SIN conductor (aviso «Viaje sin conductor»), y un viaje Oruro → Potosí que debió
+ * Crea: un viaje La Paz → Oruro que sale en ~10 h con conductor y 3 paquetes sueltos del mismo trayecto (aviso «Paquetes sueltos»),
+ * un viaje Cochabamba → Santa Cruz que sale en ~20 h SIN conductor (aviso «Viaje sin conductor»), y un viaje Oruro → Potosí que debió
  * salir hace 2 horas con 2 paquetes asignados (aviso «Un viaje no ha salido»). Todo lleva la marca DEMO-LOGI en la descripción
  * de los paquetes y en el código del viaje: el borrado solo toca lo marcado y nunca por patrón amplio.
- * Las fechas son relativas a «ahora»: conviene sembrar el mismo día de la demostración.
+ * Las salidas son relativas a «ahora»: conviene sembrar poco antes de la demostración.
  */
 import { randomBytes } from 'node:crypto';
 import { serviceSupabase as db } from '../src/shared/config/supabase.js';
@@ -56,9 +56,10 @@ const vehicles = must('vehículos', await db.from('vehicles').select('id, plate,
 const big = vehicles.find((v) => v.capacity_kg >= 5000) ?? vehicles[0];
 const small = vehicles.find((v) => v.id !== big.id) ?? big;
 
-// mañana a las 08:30 y 14:00 hora de La Paz (UTC-4)
-const tomorrow = new Date(Date.now() + 24 * HOUR);
-const at = (h, m) => new Date(Date.UTC(tomorrow.getUTCFullYear(), tomorrow.getUTCMonth(), tomorrow.getUTCDate(), h + 4, m)).toISOString();
+// Salidas relativas a AHORA (siempre dentro de la ventana de los avisos): el viaje con conductor sale en ~10 h y el que no tiene
+// conductor en ~20 h (los avisos de «sin conductor» miran las próximas 24 h), redondeados a la media hora
+const HALF = 30 * 60 * 1000;
+const inHours = (h) => new Date(Math.round((Date.now() + h * HOUR) / HALF) * HALF).toISOString();
 
 const CITY = {
   'La Paz': [-16.5, -68.1193], Oruro: [-17.9833, -67.15], Cochabamba: [-17.3895, -66.1568],
@@ -70,8 +71,8 @@ const routeRow = (code, origin, destination, departure, driver, vehicle) => ({
 });
 
 const [rOk, rNoDriver, rLate] = must('viajes', await db.from('transport_routes').insert([
-  routeRow(`${MARK}-1`, 'La Paz', 'Oruro', at(8, 30), driverId, big.id),
-  routeRow(`${MARK}-2`, 'Cochabamba', 'Santa Cruz', at(14, 0), null, small.id),
+  routeRow(`${MARK}-1`, 'La Paz', 'Oruro', inHours(10), driverId, big.id),
+  routeRow(`${MARK}-2`, 'Cochabamba', 'Santa Cruz', inHours(20), null, small.id),
   routeRow(`${MARK}-3`, 'Oruro', 'Potosí', new Date(Date.now() - 2 * HOUR).toISOString(), driverId, big.id),
 ]).select('id'));
 
