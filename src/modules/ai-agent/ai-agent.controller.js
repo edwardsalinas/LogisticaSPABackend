@@ -38,6 +38,11 @@ export const chatSchema = z.object({
   voice: z.boolean().optional(),
   // conversación a la que pertenece el mensaje (si falta o no es del usuario, se abre una nueva)
   conversation_id: z.string().max(64).optional(),
+  // qué está viendo la persona (ruta y, si hay, el paquete o viaje en pantalla); el servidor lo valida contra una lista cerrada
+  context: z.object({
+    path: z.string().max(160),
+    entity: z.object({ type: z.enum(['package', 'route']), ref: z.string().max(64) }).optional(),
+  }).optional(),
 });
 
 /** Lo que se guarda tras una consulta: la conversación y la métrica de auditoría (nunca rompen la respuesta). */
@@ -71,7 +76,7 @@ export const handleChat = async (req, res) => {
     body = chatSchema.parse(req.body);
     // se comprueba la conversación EN PARALELO al trabajo del modelo: no suma tiempo a la respuesta
     convoPromise = resolveConversation(db, req.user, body.conversation_id);
-    const out = await AiAgentService.processChatMessage(body.message, { user: req.user, history: body.history, voice: body.voice });
+    const out = await AiAgentService.processChatMessage(body.message, { user: req.user, history: body.history, voice: body.voice, pageContext: body.context });
     const convo = await convoPromise;
     res.status(200).json({ success: true, response: out.text, attachments: out.attachments, model: out.model, conversation_id: convo.id });
     await afterAnswer({ req, body, convo, out, started, streamed: false }); // después de responder
@@ -161,7 +166,7 @@ export const handleChatStream = async (req, res) => {
   try {
     const out = await AiAgentService.processChatMessageStream(
       body.message,
-      { user: req.user, history: body.history, voice: body.voice },
+      { user: req.user, history: body.history, voice: body.voice, pageContext: body.context },
       { emit: send, signal: abort.signal },
     );
     const convo = await convoPromise;
