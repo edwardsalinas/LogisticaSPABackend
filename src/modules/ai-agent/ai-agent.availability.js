@@ -1,5 +1,6 @@
 import { tool } from '@langchain/core/tools';
 import { z } from 'zod';
+import { dayLabel, timeLabel, tripLabel } from './ai-agent.labels.js';
 
 /**
  * Disponibilidad para agendar: "¿qué viajes a La Paz hay el viernes de 3 a 5 con espacio?" y, para el personal,
@@ -65,10 +66,12 @@ export const enrichTrips = async (db, list, kg = null) => {
       const usedKg = round1(used[r.id] || 0);
       const free = capacity != null ? round1(capacity - usedKg) : null;
       return {
-        ref: r.route_code || r.id, // lo que se pasa a propose_create_package para agendar en este viaje
+        label: tripLabel(r), // cómo hablar de este viaje con la persona (nunca su ref)
+        ref: r.route_code || r.id, // INTERNO: solo para las herramientas propose_*; nunca se muestra
         origin: r.origin,
         destination: r.destination,
-        departure_time: r.departure_time,
+        departure_time: r.departure_time, // UTC: para la pantalla, NO para decirlo en voz alta
+        departure_local: r.departure_time ? `${dayLabel(r.departure_time)} a las ${timeLabel(r.departure_time)} (hora de Bolivia)` : null,
         estimated_arrival: r.estimated_arrival,
         vehicle: vehicleText(v),
         capacity_kg: capacity,
@@ -127,7 +130,7 @@ export const buildAvailabilityTools = (user, db) => {
     {
       name: 'find_available_trips',
       description:
-        'Busca viajes planeados en una fecha y horario (hora de Bolivia), opcionalmente por origen y destino, e indica cuánto espacio libre queda (kg) en cada uno. Si no hay ninguno en esa ventana devuelve los próximos viajes alternativos. Úsala para "¿qué viajes a La Paz hay el viernes de 3 a 5?", "¿hay espacio para 20 kg?" o "¿cuándo sale el próximo a Oruro?". Convierte días como "viernes" o "mañana" a fecha AAAA-MM-DD usando el calendario del sistema.',
+        'Busca viajes planeados en una fecha y horario (hora de Bolivia), opcionalmente por origen y destino, e indica cuánto espacio libre queda (kg) en cada uno. Si no hay ninguno en esa ventana devuelve los próximos viajes alternativos. Cada viaje trae `label` (cómo nombrarlo ante la persona) y un `ref` INTERNO que nunca se muestra. Úsala para "¿qué viajes a La Paz hay el viernes de 3 a 5?", "¿hay espacio para 20 kg?" o "¿cuándo sale el próximo a Oruro?". Convierte días como "viernes" o "mañana" a fecha AAAA-MM-DD usando el calendario del sistema.',
       schema: z.object({
         date: z.string().describe('Fecha AAAA-MM-DD'),
         from_time: z.string().optional().describe('Hora inicial HH:mm (por defecto 00:00)'),

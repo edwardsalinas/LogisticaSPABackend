@@ -71,7 +71,8 @@ export const planAssignments = ({ packages, trips, now = Date.now() }) => {
     for (let i = 0; i < list.length; i += MAX_BATCH) {
       const chunk = list.slice(i, i + MAX_BATCH);
       groups.push({
-        route_ref: trip.ref,
+        route_ref: trip.ref, // interno: nunca se muestra
+        label: trip.label,
         origin: trip.origin,
         destination: trip.destination,
         departure_time: trip.departure_time,
