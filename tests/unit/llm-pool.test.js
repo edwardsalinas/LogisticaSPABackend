@@ -302,3 +302,70 @@ test('gpt-oss usa razonamiento bajo por defecto (primer texto más rápido) y se
   const high = resolvePool({ LLM_POOL: 'groq', GROQ_API_KEY: 'q', GROQ_REASONING_EFFORT: 'high' }).entries;
   assert.ok(high.every((x) => x.reasoningEffort === 'high'));
 });
+
+// ---------------------------------------------------------------- límites de uso: esperar lo que pide el proveedor
+import { retryAfterMs } from '../../src/modules/ai-agent/llm.pool.js';
+
+test('retryAfterMs lee lo que pide el proveedor: cabecera retry-after o el texto del mensaje', () => {
+  assert.equal(retryAfterMs(err(429, 'x', { headers: { 'retry-after': '7' } })), 7000);
+  assert.equal(retryAfterMs(err(429, 'Rate limit reached ... Please try again in 4.875s. Need more tokens?')), 4875);
+  assert.equal(retryAfterMs(err(429, 'Please try again in 350ms')), 350);
+  assert.equal(retryAfterMs(err(429, 'Please try again in 1m2.5s')), 62_500);
+  assert.equal(retryAfterMs(err(429, 'Please try again in 2m')), 120_000);
+  assert.equal(retryAfterMs(err(429, 'muchas consultas')), null);
+  assert.equal(retryAfterMs(null), null);
+});
+
+test('un límite que acaba en 5 segundos enfría el modelo ~5 s, no un minuto', async () => {
+  const c = clock();
+  const pool = make([['a']], { now: c.now, sleep: async (ms) => c.tick(ms) });
+  await assert.rejects(() => pool.run(async () => { throw err(429, 'Please try again in 5s'); }), (e) => e.status === 429);
+  const m = pool.members[0];
+  assert.ok(m.cooldownUntil - c.now() <= 5500, 'cooldown corto');
+  c.tick(6000);
+  const ok = await pool.run(async () => 'listo');
+  assert.equal(ok.result, 'listo');
+});
+
+test('si todos están ocupados pero el primero queda libre en unos segundos, espera y responde en vez de rendirse', async () => {
+  const c = clock();
+  const slept = [];
+  const pool = make([['a'], ['b']], { now: c.now, sleep: async (ms) => { slept.push(ms); c.tick(ms); } });
+  let calls = 0;
+  const out = await pool.run(async () => { calls += 1; if (calls <= 2) throw err(429, 'Please try again in 3s'); return 'respondió'; });
+  assert.equal(out.result, 'respondió');
+  assert.equal(slept.length, 1);
+  assert.ok(slept[0] > 0 && slept[0] <= 3500, `esperó ${slept[0]} ms`); // lo que pide el proveedor (3 s) más un margen
+});
+
+test('si la espera es larga (más de 20 s) no espera: falla en seguida con el límite', async () => {
+  const c = clock();
+  const slept = [];
+  const pool = make([['a']], { now: c.now, sleep: async (ms) => { slept.push(ms); c.tick(ms); } });
+  await assert.rejects(() => pool.run(async () => { throw err(429, 'Please try again in 40s'); }), (e) => e.status === 429);
+  assert.deepEqual(slept, []);
+});
+
+test('solo espera UNA vez: si tras esperar sigue el límite, falla (no hay bucles)', async () => {
+  const c = clock();
+  const slept = [];
+  const pool = make([['a']], { now: c.now, sleep: async (ms) => { slept.push(ms); c.tick(ms); } });
+  await assert.rejects(() => pool.run(async () => { throw err(429, 'Please try again in 2s'); }), (e) => e.status === 429);
+  assert.equal(slept.length, 1);
+});
+
+test('un error de la propia consulta (no del proveedor) nunca se reintenta ni espera', async () => {
+  const slept = [];
+  const pool = make([['a'], ['b']], { sleep: async (ms) => slept.push(ms) });
+  await assert.rejects(() => pool.run(async () => { throw err(400, 'mala petición'); }), (e) => e.status === 400);
+  assert.deepEqual(slept, []);
+});
+
+test('si canRetry lo impide (la consulta ya tuvo efectos), no se repite aunque el límite acabe pronto', async () => {
+  const slept = [];
+  let calls = 0;
+  const pool = make([['a'], ['b']], { sleep: async (ms) => slept.push(ms) });
+  await assert.rejects(() => pool.run(async () => { calls += 1; throw err(429, 'Please try again in 1s'); }, { canRetry: () => false }));
+  assert.equal(calls, 1);
+  assert.deepEqual(slept, []);
+});

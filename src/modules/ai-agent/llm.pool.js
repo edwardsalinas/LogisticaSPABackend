@@ -51,6 +51,9 @@ export const supportsVision = (provider, model) => provider === 'gemini' || /qwe
 
 const WINDOW_MS = 60 * 1000;
 const COOLDOWN = { rateLimited: 60 * 1000, transient: 30 * 1000, unavailable: 10 * 60 * 1000 };
+// Si todos los modelos están ocupados pero el primero queda libre en menos de esto (20 s), se espera ese instante en vez de rendirse
+const MAX_SHORT_WAIT_MS = 20_000;
+const COOLDOWN_MARGIN_MS = 250;
 
 const num = (v, fallback) => (v !== undefined && v !== '' && Number.isFinite(Number(v)) ? Number(v) : fallback);
 
@@ -117,6 +120,23 @@ export const classifyError = (error) => {
   return null;
 };
 
+/**
+ * Cuánto pide esperar el proveedor tras un límite de uso, en milisegundos (o null si no lo dice): la cabecera «retry-after»
+ * (segundos) o el mensaje («Please try again in 4.875s», «in 1m2.5s», «in 350ms»). Antes se enfriaba el modelo un minuto entero
+ * aunque el proveedor pidiera 5 segundos: con los límites por minuto de los planes gratuitos eso dejaba sin servicio de más.
+ */
+export const retryAfterMs = (error) => {
+  const header = Number(error?.headers?.['retry-after'] ?? error?.response?.headers?.['retry-after']);
+  if (Number.isFinite(header) && header > 0) return header * 1000;
+  const text = String(error?.message ?? error?.error?.message ?? '');
+  const m = text.match(/try again in\s+(?:(\d+(?:\.\d+)?)m(?!s))?\s*(?:(\d+(?:\.\d+)?)(ms|s))?/i);
+  if (!m || (!m[1] && !m[2])) return null;
+  const minutes = m[1] ? Number(m[1]) * 60_000 : 0;
+  const rest = m[2] ? Number(m[2]) * (m[3].toLowerCase() === 'ms' ? 1 : 1000) : 0;
+  const ms = minutes + rest;
+  return ms > 0 ? ms : null;
+};
+
 const withTimeout = (promise, ms) =>
   new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(Object.assign(new Error(`El modelo no respondió en ${ms} ms`), { name: 'LLMTimeoutError' })), ms);
@@ -128,7 +148,8 @@ export class LLMPool {
    * @param {object[]} entries salida de resolvePool(...).entries
    * @param {{ build: (entry) => object, now?: () => number, strategy?: 'balanced'|'speed', timeoutMs?: number, maxAttempts?: number }} options
    */
-  constructor(entries, { build, now = Date.now, strategy = 'balanced', timeoutMs = 30000, maxAttempts = 3 } = {}) {
+  constructor(entries, { build, now = Date.now, strategy = 'balanced', timeoutMs = 30000, maxAttempts = 3, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) } = {}) {
+    this.sleep = sleep;
     if (typeof build !== 'function') throw new Error('LLMPool necesita una función build(entry) que cree el modelo');
     this.build = build;
     this.now = now;
@@ -181,8 +202,8 @@ export class LLMPool {
   }
 
   #cool(m, kind, error) {
-    const retryAfter = Number(error?.headers?.['retry-after'] ?? error?.response?.headers?.['retry-after']);
-    const ms = kind === 'rateLimited' && Number.isFinite(retryAfter) && retryAfter > 0 ? Math.min(retryAfter * 1000, 5 * 60 * 1000) : COOLDOWN[kind];
+    const asked = kind === 'rateLimited' ? retryAfterMs(error) : null;
+    const ms = asked ? Math.min(asked, 5 * 60 * 1000) : COOLDOWN[kind];
     m.cooldownUntil = this.now() + ms;
     m.cooldownReason = kind;
   }
@@ -195,10 +216,12 @@ export class LLMPool {
    * Devuelve { result, member, attempts }.
    */
   async run(fn, { canRetry = () => true, tokensOf = () => 0, callsOf = () => 1, accept = null } = {}) {
-    const tried = new Set();
     let lastError;
     const candidates = accept ? this.members.filter(accept).length : this.size;
     if (candidates === 0) throw Object.assign(new Error('Ningún modelo configurado puede hacer esto (por ejemplo, leer imágenes)'), { status: 503 });
+    // dos rondas como máximo: la segunda solo si todos quedaron ocupados por un límite de uso que acaba en unos segundos
+    for (let round = 1; round <= 2; round += 1) {
+    const tried = new Set();
     for (let attempt = 1; attempt <= Math.min(this.maxAttempts, candidates); attempt += 1) {
       const m = this.pick(tried, accept);
       if (!m) break;
@@ -235,6 +258,13 @@ export class LLMPool {
       } finally {
         m.inFlight -= 1;
       }
+    }
+    // ¿alguno queda libre en unos segundos (límite de uso por minuto)? Se espera ese instante y se prueba otra vez, una sola vez
+    const waits = this.members.filter((m) => (!accept || accept(m)) && m.cooldownReason === 'rateLimited' && m.cooldownUntil > this.now()).map((m) => m.cooldownUntil - this.now());
+    const wait = waits.length ? Math.min(...waits) : Infinity;
+    // (también si ni se pudo intentar porque todos seguían enfriándose de una consulta anterior)
+    if (round === 1 && wait <= MAX_SHORT_WAIT_MS && (!lastError || classifyError(lastError) === 'rateLimited')) { await this.sleep(wait + COOLDOWN_MARGIN_MS); continue; } // un poco más de lo que pide, para no llegar justo antes
+    break;
     }
     // Ninguno pudo responder: se propaga el último error (el controlador lo traduce a 429/503 si corresponde)
     throw lastError ?? Object.assign(new Error('No hay modelos disponibles en este momento'), { status: 503 });
