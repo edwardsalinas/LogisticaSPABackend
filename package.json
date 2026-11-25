@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "start": "node --env-file=.env src/server.js",
+    "start:e2e": "node --env-file=.env --env-file=.env.e2e src/server.js",
     "dev": "node --env-file=.env --watch src/server.js",
     "seed": "node --env-file=.env src/shared/utils/seed.js",
     "test:flow": "node --env-file=.env tests/integration/full-flow.test.js",
