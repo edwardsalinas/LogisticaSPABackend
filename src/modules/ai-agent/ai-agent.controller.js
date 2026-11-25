@@ -42,6 +42,7 @@ export const chatSchema = z.object({
   context: z.object({
     path: z.string().max(160),
     entity: z.object({ type: z.enum(['package', 'route']), ref: z.string().max(64) }).optional(),
+    view: z.object({ tab: z.string().max(20) }).optional(), // pestaña abierta (el servidor solo acepta las de cada pantalla)
   }).optional(),
 });
 
