@@ -6,7 +6,7 @@ import supabase from '../../shared/config/supabase.js';
 import { resolveConversation, saveTurn, listConversations, getConversation, deleteConversation } from './ai-conversations.service.js';
 import { recordChat, recordLogiEvent, usageReport, LOGI_EVENTS } from './ai-audit.service.js';
 import { buildAlerts } from './ai-agent.alerts.js';
-import { prepareAssignProposal, prepareCreateProposal } from './ai-agent.actions.js';
+import { prepareAssignProposal, prepareCreateProposal, prepareEventProposal } from './ai-agent.actions.js';
 import { validateImage, extractFromImage } from './ai-agent.documents.js';
 
 // Base de datos del historial y la auditoría (se puede sustituir en las pruebas)
@@ -287,6 +287,39 @@ export const handlePrepareAssignment = async (req, res) => {
   } catch (error) {
     console.error('[AI Suggestion Error]:', error);
     return res.status(500).json({ success: false, message: 'No se pudo preparar la asignación.' });
+  }
+};
+
+// ============================================================ ayuda por voz: preparar un evento de seguimiento sin pasar por el modelo
+const prepareEventSchema = z.object({
+  codes: z.array(z.string().trim().min(3).max(64)).min(1).max(10),
+  status: z.enum(['en_transito', 'en_agencia', 'siniestro']),
+  note: z.string().trim().max(500).optional(),
+});
+
+/**
+ * Convierte lo que la persona fue dictando (paquetes, estado, nota) en una PROPUESTA de evento a confirmar. Aplica exactamente
+ * las mismas comprobaciones que la herramienta del agente (permisos, estados permitidos, paquetes que admiten el evento,
+ * ubicación), pero sin gastar una llamada al modelo. Solo personal; no registra nada: la confirmación es aparte.
+ */
+export const handlePrepareEvent = async (req, res) => {
+  let body;
+  try {
+    body = prepareEventSchema.parse(req.body);
+  } catch (error) {
+    if (error instanceof z.ZodError) return res.status(400).json({ success: false, errors: error.flatten().fieldErrors });
+    throw error;
+  }
+  try {
+    const result = await prepareEventProposal(req.user, db, { codes: body.codes, status: body.status, note: body.note });
+    let parsed = null;
+    try { parsed = JSON.parse(result); } catch { /* es un mensaje de rechazo */ }
+    if (parsed?.kind === 'action_proposal') return res.status(200).json({ success: true, data: parsed });
+    const denied = /^No tienes permiso/.test(result);
+    return res.status(denied ? 403 : 409).json({ success: false, message: String(result) });
+  } catch (error) {
+    console.error('[AI Event Proposal Error]:', error);
+    return res.status(500).json({ success: false, message: 'No se pudo preparar el evento.' });
   }
 };
 

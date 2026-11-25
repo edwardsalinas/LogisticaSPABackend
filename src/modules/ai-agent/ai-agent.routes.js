@@ -75,6 +75,9 @@ router.post('/documents/propose', AiAgentController.handleProposeFromDocument);
 /** Convierte un grupo de las sugerencias de asignación en una propuesta a confirmar (sin llamar al modelo). */
 router.post('/suggestions/assign', AiAgentController.handlePrepareAssignment);
 
+/** Con paquetes, estado y nota ya dictados, prepara la propuesta de un evento de seguimiento (sin llamar al modelo; se confirma aparte). */
+router.post('/suggestions/event', AiAgentController.handlePrepareEvent);
+
 /**
  * @swagger
  * /api/ai-agent/chat/stream:

@@ -207,73 +207,80 @@ export const prepareCreateProposal = async (user, db, input) => {
   }
 };
 
+/**
+ * Prepara la PROPUESTA de registrar un evento de seguimiento (la misma que arma la herramienta del agente: permisos, estados
+ * permitidos, paquetes que admiten el evento, ubicación). Sin pasar por el modelo: la usan la herramienta y el endpoint de la
+ * ayuda por voz. Devuelve el texto de la herramienta: JSON de la propuesta o un mensaje de rechazo.
+ */
+export const prepareEventProposal = async (user, db, { code, codes, status, note }) => {
+  try {
+    if (!OPS.includes(user.role)) return DENIED;
+    if (!EVENT_STATUS[status]) return 'Estado no permitido. Usa en_transito, en_agencia o siniestro.';
+    const observations = cleanNote(note);
+    if (observations === null) return `La nota es demasiado larga (máximo ${MAX_NOTE} caracteres).`;
+    const parsed = normalizeCodes({ code, codes });
+    if (parsed.error) return parsed.error;
+
+    const items = [];
+    const skipped = [];
+    for (const c of parsed.codes) {
+      const pkg = await findPackage(db, c);
+      if (!pkg) { skipped.push({ code: c, reason: 'no existe' }); continue; }
+      if (FINAL.includes(pkg.status)) { skipped.push({ code: pkg.tracking_code, reason: `ya está ${STATUS_TEXT[pkg.status].toLowerCase()}` }); continue; }
+      const where = await locateForEvent(db, pkg);
+      if (!where) { skipped.push({ code: pkg.tracking_code, reason: 'sin ubicación para el evento' }); continue; }
+      items.push({ package_id: pkg.id, tracking_code: pkg.tracking_code, lat: where.lat, lng: where.lng, _pkg: pkg, _where: where.text });
+    }
+    if (items.length === 0) {
+      if (parsed.codes.length === 1) {
+        const s = skipped[0];
+        if (s.reason === 'no existe') return 'No se encontró ningún paquete con ese código.';
+        if (s.reason === 'sin ubicación para el evento') return 'No tengo ninguna ubicación de ese paquete para registrar el evento. Regístralo desde la pantalla de Tracking indicando las coordenadas.';
+        return `El paquete ${s.reason} y no admite nuevos estados.`;
+      }
+      return `No hay ningún paquete al que se pueda registrar el evento (${skipped.map((s) => `${s.code}: ${s.reason}`).join('; ')}).`;
+    }
+
+    const first = items[0];
+    const lines = items.length === 1
+      ? [
+          `Paquete: ${first.tracking_code} (${first._pkg.origen} → ${first._pkg.destino})`,
+          `Estado actual: ${STATUS_TEXT[first._pkg.status] ?? first._pkg.status}`,
+          `Estado nuevo: ${EVENT_STATUS[status]}`,
+          `Ubicación: ${first._where}`,
+          ...(observations ? [`Nota: ${observations}`] : []),
+          ...omitted(skipped),
+        ]
+      : [
+          `Paquetes (${items.length}): ${items.map((i) => i.tracking_code).join(', ')}`,
+          `Estado nuevo para todos: ${EVENT_STATUS[status]}`,
+          'Ubicación: la última conocida de cada paquete',
+          ...(observations ? [`Nota: ${observations}`] : []),
+          ...omitted(skipped),
+        ];
+    const proposal = createProposal({
+      user,
+      type: 'register_tracking_event',
+      params: {
+        status,
+        observations: observations || undefined,
+        items: items.map(({ package_id, tracking_code, lat, lng }) => ({ package_id, tracking_code, lat, lng })),
+      },
+      title: items.length === 1 ? 'Registrar evento de seguimiento' : `Registrar evento en ${items.length} paquetes`,
+      lines,
+      // los mismos datos del resumen, para que la pantalla muestre cómo se hace (Logi guiado)
+      ui: { fill: { form: 'event', values: { status, observations: observations || undefined, items: items.map(({ package_id, tracking_code, lat, lng }) => ({ package_id, tracking_code, lat, lng })) } } },
+    });
+    return proposalResult(proposal, skipped);
+  } catch (e) {
+    return `No se pudo preparar la acción: ${e.message}`;
+  }
+};
+
 export const buildActionTools = (user, db) => {
   // ------------------------------------------------------------------ registrar evento (uno o varios paquetes)
   const proposeEvent = tool(
-    async ({ code, codes, status, note }) => {
-      try {
-        if (!OPS.includes(user.role)) return DENIED;
-        if (!EVENT_STATUS[status]) return 'Estado no permitido. Usa en_transito, en_agencia o siniestro.';
-        const observations = cleanNote(note);
-        if (observations === null) return `La nota es demasiado larga (máximo ${MAX_NOTE} caracteres).`;
-        const parsed = normalizeCodes({ code, codes });
-        if (parsed.error) return parsed.error;
-
-        const items = [];
-        const skipped = [];
-        for (const c of parsed.codes) {
-          const pkg = await findPackage(db, c);
-          if (!pkg) { skipped.push({ code: c, reason: 'no existe' }); continue; }
-          if (FINAL.includes(pkg.status)) { skipped.push({ code: pkg.tracking_code, reason: `ya está ${STATUS_TEXT[pkg.status].toLowerCase()}` }); continue; }
-          const where = await locateForEvent(db, pkg);
-          if (!where) { skipped.push({ code: pkg.tracking_code, reason: 'sin ubicación para el evento' }); continue; }
-          items.push({ package_id: pkg.id, tracking_code: pkg.tracking_code, lat: where.lat, lng: where.lng, _pkg: pkg, _where: where.text });
-        }
-        if (items.length === 0) {
-          if (parsed.codes.length === 1) {
-            const s = skipped[0];
-            if (s.reason === 'no existe') return 'No se encontró ningún paquete con ese código.';
-            if (s.reason === 'sin ubicación para el evento') return 'No tengo ninguna ubicación de ese paquete para registrar el evento. Regístralo desde la pantalla de Tracking indicando las coordenadas.';
-            return `El paquete ${s.reason} y no admite nuevos estados.`;
-          }
-          return `No hay ningún paquete al que se pueda registrar el evento (${skipped.map((s) => `${s.code}: ${s.reason}`).join('; ')}).`;
-        }
-
-        const first = items[0];
-        const lines = items.length === 1
-          ? [
-              `Paquete: ${first.tracking_code} (${first._pkg.origen} → ${first._pkg.destino})`,
-              `Estado actual: ${STATUS_TEXT[first._pkg.status] ?? first._pkg.status}`,
-              `Estado nuevo: ${EVENT_STATUS[status]}`,
-              `Ubicación: ${first._where}`,
-              ...(observations ? [`Nota: ${observations}`] : []),
-              ...omitted(skipped),
-            ]
-          : [
-              `Paquetes (${items.length}): ${items.map((i) => i.tracking_code).join(', ')}`,
-              `Estado nuevo para todos: ${EVENT_STATUS[status]}`,
-              'Ubicación: la última conocida de cada paquete',
-              ...(observations ? [`Nota: ${observations}`] : []),
-              ...omitted(skipped),
-            ];
-        const proposal = createProposal({
-          user,
-          type: 'register_tracking_event',
-          params: {
-            status,
-            observations: observations || undefined,
-            items: items.map(({ package_id, tracking_code, lat, lng }) => ({ package_id, tracking_code, lat, lng })),
-          },
-          title: items.length === 1 ? 'Registrar evento de seguimiento' : `Registrar evento en ${items.length} paquetes`,
-          lines,
-          // los mismos datos del resumen, para que la pantalla muestre cómo se hace (Logi guiado)
-          ui: { fill: { form: 'event', values: { status, observations: observations || undefined, items: items.map(({ package_id, tracking_code, lat, lng }) => ({ package_id, tracking_code, lat, lng })) } } },
-        });
-        return proposalResult(proposal, skipped);
-      } catch (e) {
-        return `No se pudo preparar la acción: ${e.message}`;
-      }
-    },
+    async (input) => prepareEventProposal(user, db, input),
     {
       name: 'propose_register_event',
       description: `PROPONE registrar un evento de seguimiento (en_transito, en_agencia o siniestro) para uno o varios paquetes (hasta ${MAX_BATCH}, con UNA sola confirmación), con una nota opcional. No lo ejecuta: el usuario debe confirmarlo en la tarjeta. Solo administradores y operadores. Úsala para "registra que el paquete llegó a la agencia", "marca estos tres paquetes como siniestro", etc.`,
