@@ -1,15 +1,20 @@
 import { createClient } from '@supabase/supabase-js';
+import { randomBytes } from 'node:crypto';
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
+// Las contraseñas NO están escritas en el código (este repositorio es público): salen de SEED_<ROL>_PASSWORD o se generan al azar en cada ejecución
+// y se muestran una sola vez al final. Si la cuenta ya existe, su contraseña NO se cambia (para eso: scripts/rotar-claves-prueba.mjs).
+const pw = (role) => process.env[`SEED_${role}_PASSWORD`] || `${randomBytes(14).toString('base64url')}9a`;
+
 const USERS = [
-  { email: 'admin@logistica.bo',    password: 'Admin123!',    role: 'admin',              name: 'Carlos Mendoza (Admin)' },
-  { email: 'operador@logistica.bo', password: 'Operador123!', role: 'logistics_operator', name: 'Ana García (Operadora)' },
-  { email: 'driver@logistica.bo',   password: 'Driver123!',   role: 'driver',             name: 'Juan Pérez (Conductor)' },
-  { email: 'cliente@logistica.bo',  password: 'Cliente123!',  role: 'client',             name: 'María López (Cliente)' },
+  { email: 'admin@logistica.bo',    password: pw('ADMIN'),    role: 'admin',              name: 'Carlos Mendoza (Admin)' },
+  { email: 'operador@logistica.bo', password: pw('OPERATOR'), role: 'logistics_operator', name: 'Ana García (Operadora)' },
+  { email: 'driver@logistica.bo',   password: pw('DRIVER'),   role: 'driver',             name: 'Juan Pérez (Conductor)' },
+  { email: 'cliente@logistica.bo',  password: pw('CLIENT'),  role: 'client',             name: 'María López (Cliente)' },
 ];
 
 async function seedUsers() {
