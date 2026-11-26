@@ -1,14 +1,28 @@
 name: Backend CI
 
+# Corre en cada push y cada pull request a main o develop. NO usa secretos ni la base de datos real: las pruebas unitarias usan bases
+# simuladas y variables de entorno falsas (tests/unit/_env.js). Las pruebas de extremo a extremo (que sí usan la base real y el modelo de
+# IA) están en el repositorio del frontend, en el flujo manual «E2E manual (sistema real)».
+
 on:
   push:
     branches: [ main, develop ]
   pull_request:
     branches: [ main, develop ]
 
+# Una subida nueva a la misma rama cancela la corrida anterior (no se acumulan)
+concurrency:
+  group: backend-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
 jobs:
   test:
+    name: Pruebas
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - name: Use Node.js
@@ -20,3 +34,19 @@ jobs:
       - run: npm ci --ignore-scripts
       - name: Run tests
         run: npm test
+
+  dependencias:
+    name: Vulnerabilidades en dependencias
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci --ignore-scripts
+      # Solo lo que se publica (sin herramientas de desarrollo). Falla con vulnerabilidades ALTAS o CRÍTICAS: si aparece una nueva
+      # (un aviso publicado después de la última revisión), la solución casi siempre es «npm audit fix».
+      - name: Auditoría de dependencias de producción
+        run: npm audit --omit=dev --audit-level=high
