@@ -1,6 +1,7 @@
 import * as FleetService from './fleet.service.js';
 import { vehicleSchema, driverSchema } from './fleet.schema.js';
 import { z } from 'zod';
+import { publicError } from '../../shared/errors/publicError.js';
 
 export const handleCreateVehicle = async (req, res) => {
   try {
@@ -9,7 +10,7 @@ export const handleCreateVehicle = async (req, res) => {
     return res.status(201).json({ success: true, data: result });
   } catch (error) {
     if (error instanceof z.ZodError) return res.status(400).json({ success: false, errors: error.flatten().fieldErrors });
-    return res.status(500).json({ success: false, message: error.message });
+    { const out = publicError(error); return res.status(out.status).json({ success: false, message: out.message }); }
   }
 };
 
@@ -19,7 +20,7 @@ export const handleGetVehicles = async (req, res) => {
     const result = await FleetService.getVehicles(filters);
     return res.status(200).json({ success: true, data: result });
   } catch (error) {
-    return res.status(500).json({ success: false, message: error.message });
+    { const out = publicError(error); return res.status(out.status).json({ success: false, message: out.message }); }
   }
 };
 
@@ -29,7 +30,7 @@ export const handleGetDrivers = async (req, res) => {
     const result = await FleetService.getDrivers(filters);
     return res.status(200).json({ success: true, data: result });
   } catch (error) {
-    return res.status(500).json({ success: false, message: error.message });
+    { const out = publicError(error); return res.status(out.status).json({ success: false, message: out.message }); }
   }
 };
 
@@ -43,7 +44,7 @@ export const handleRegisterDriver = async (req, res) => {
     return res.status(201).json({ success: true, data: result });
   } catch (error) {
     if (error instanceof z.ZodError) return res.status(400).json({ success: false, errors: error.flatten().fieldErrors });
-    return res.status(500).json({ success: false, message: error.message });
+    { const out = publicError(error); return res.status(out.status).json({ success: false, message: out.message }); }
   }
 };
 
@@ -52,7 +53,7 @@ export const handleGetClients = async (req, res) => {
     const clients = await FleetService.getClients();
     return res.status(200).json({ success: true, data: clients });
   } catch (error) {
-    return res.status(500).json({ success: false, message: error.message });
+    { const out = publicError(error); return res.status(out.status).json({ success: false, message: out.message }); }
   }
 };
 
@@ -64,7 +65,7 @@ export const handleGetSchedules = async (req, res) => {
     const result = await FleetService.getSchedules(req.query);
     return res.status(200).json({ success: true, data: result });
   } catch (error) {
-    return res.status(500).json({ success: false, message: error.message });
+    { const out = publicError(error); return res.status(out.status).json({ success: false, message: out.message }); }
   }
 };
 
@@ -118,7 +119,7 @@ export const handleDeleteSchedule = async (req, res) => {
     await FleetService.deleteSchedule(req.params.id);
     return res.status(204).send();
   } catch (error) {
-    return res.status(500).json({ success: false, message: error.message });
+    { const out = publicError(error); return res.status(out.status).json({ success: false, message: out.message }); }
   }
 };
 
@@ -128,6 +129,6 @@ export const handleGenerateRoutes = async (req, res) => {
     const result = await FleetService.generateRoutesFromSchedules(daysAhead);
     return res.status(200).json({ success: true, data: result });
   } catch (error) {
-    return res.status(500).json({ success: false, message: error.message });
+    { const out = publicError(error); return res.status(out.status).json({ success: false, message: out.message }); }
   }
 };

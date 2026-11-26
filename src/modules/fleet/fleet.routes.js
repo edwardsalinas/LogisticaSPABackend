@@ -36,7 +36,7 @@ router.use(requireAuth);
  *       201:
  *         description: Vehículo creado
  */
-router.get('/vehicles', FleetController.handleGetVehicles);
+router.get('/vehicles', requireRole(['admin', 'logistics_operator']), FleetController.handleGetVehicles);
 router.post('/vehicles', requireRole(['admin']), FleetController.handleCreateVehicle);
 
 /**
@@ -48,7 +48,7 @@ router.post('/vehicles', requireRole(['admin']), FleetController.handleCreateVeh
  *     security:
  *       - bearerAuth: []
  */
-router.get('/drivers', FleetController.handleGetDrivers);
+router.get('/drivers', requireRole(['admin', 'logistics_operator']), FleetController.handleGetDrivers);
 router.post('/drivers', requireRole(['admin', 'driver']), FleetController.handleRegisterDriver);
 
 /**
@@ -79,8 +79,8 @@ router.get('/clients', requireRole(['admin', 'logistics_operator']), FleetContro
  *     security:
  *       - bearerAuth: []
  */
-router.get('/schedules', FleetController.handleGetSchedules);
-router.get('/schedules/:id', FleetController.handleGetSchedule);
+router.get('/schedules', requireRole(['admin', 'logistics_operator']), FleetController.handleGetSchedules);
+router.get('/schedules/:id', requireRole(['admin', 'logistics_operator']), FleetController.handleGetSchedule);
 router.post('/schedules', requireRole(['admin']), FleetController.handleCreateSchedule);
 router.put('/schedules/:id', requireRole(['admin']), FleetController.handleUpdateSchedule);
 router.delete('/schedules/:id', requireRole(['admin']), FleetController.handleDeleteSchedule);

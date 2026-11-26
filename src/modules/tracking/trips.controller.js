@@ -1,4 +1,5 @@
 import * as TripsService from './trips.service.js';
+import { publicError } from '../../shared/errors/publicError.js';
 
 export const handleStartTrip = async (req, res) => {
   try {
@@ -29,6 +30,6 @@ export const handleGetActiveTrip = async (req, res) => {
     const result = await TripsService.getActiveTrip(driverId);
     return res.status(200).json({ success: true, data: result });
   } catch (error) {
-    return res.status(500).json({ success: false, message: error.message });
+    { const out = publicError(error); return res.status(out.status).json({ success: false, message: out.message }); }
   }
 };

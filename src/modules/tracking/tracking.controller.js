@@ -4,6 +4,7 @@ import { trackingEventSchema } from './tracking.schema.js';
 import supabase from '../../shared/config/supabase.js';
 import eventBus from '../../shared/utils/eventBus.js';
 import * as PackagesService from '../logistics/packages.service.js';
+import { publicError } from '../../shared/errors/publicError.js';
 
 export const logTrackingEvent = async (req, res) => {
   try {
@@ -387,7 +388,7 @@ export const handleGetRouteTracking = async (req, res) => {
     return res.status(200).json({ success: true, data: logs });
   } catch (error) {
     console.error('[Tracking Controller] Error obteniendo historial de ruta:', error);
-    return res.status(500).json({ success: false, message: error.message });
+    { const out = publicError(error); return res.status(out.status).json({ success: false, message: out.message }); }
   }
 };
 

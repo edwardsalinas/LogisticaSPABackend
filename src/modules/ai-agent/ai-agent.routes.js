@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import * as AiAgentController from './ai-agent.controller.js';
 import { requireAuth, requireRole } from '../iam/iam.middleware.js';
-import { chatLimiter } from '../../shared/middlewares/rateLimit.js';
+import { chatLimiter, logiEventsLimiter } from '../../shared/middlewares/rateLimit.js';
 
 const router = Router();
 router.use(requireAuth);
@@ -16,7 +16,7 @@ router.get('/usage', requireRole(['admin']), AiAgentController.handleUsage);
 router.get('/alerts', AiAgentController.handleAlerts); // cada rol recibe los suyos: el servidor decide qué ve cada uno
 
 /** Eventos de uso de Logi (avisos aceptados, acciones hechas…) para las métricas del panel de uso. Solo cuentan eventos, no contenido. */
-router.post('/logi-events', AiAgentController.handleLogiEvent);
+router.post('/logi-events', logiEventsLimiter, AiAgentController.handleLogiEvent);
 
 /** Historial: cada usuario ve, abre y borra solo SUS conversaciones. */
 router.get('/conversations', AiAgentController.handleListConversations);

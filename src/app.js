@@ -9,6 +9,7 @@ import aiAgentRoutes from './modules/ai-agent/ai-agent.routes.js';
 import checkpointsRoutes from './modules/logistics/checkpoints.routes.js';
 import statisticsRoutes from './modules/statistics/statistics.routes.js';
 import { apiLimiter } from './shared/middlewares/rateLimit.js';
+import { securityHeaders } from './shared/middlewares/securityHeaders.js';
 
 const app = express();
 
@@ -18,6 +19,9 @@ if (process.env.TRUST_PROXY) {
   const v = process.env.TRUST_PROXY;
   app.set('trust proxy', /^\d+$/.test(v) ? Number(v) : v === 'true' ? true : v);
 }
+
+app.disable('x-powered-by'); // no anunciar con qué está hecho el servidor
+app.use(securityHeaders);
 
 // CORS con lista de orígenes permitidos (necesario para enviar cookies con credenciales).
 // CORS_ORIGIN admite varios valores separados por coma.
@@ -57,5 +61,17 @@ app.use('/api/tracking', trackingRoutes);
 app.use('/api/iam', iamRoutes);
 app.use('/api/ai-agent', aiAgentRoutes);
 app.use('/api/statistics', statisticsRoutes);
+
+// Rutas inexistentes y errores no capturados (JSON roto, cuerpo demasiado grande…): siempre JSON genérico. El manejador por defecto de
+// Express devuelve una página con la TRAZA completa (rutas del servidor, versiones), útil para quien ataca.
+app.use('/api', (req, res) => res.status(404).json({ success: false, message: 'Ruta no encontrada.' }));
+// eslint-disable-next-line no-unused-vars
+app.use((err, req, res, next) => {
+  const status = Number(err?.status ?? err?.statusCode);
+  if (status === 413) return res.status(413).json({ success: false, message: 'La solicitud es demasiado grande.' });
+  if (status >= 400 && status < 500) return res.status(400).json({ success: false, message: 'Solicitud no válida.' });
+  console.error('[API Error]:', err?.message ?? err);
+  return res.status(500).json({ success: false, message: 'Error interno del servidor.' });
+});
 
 export default app;

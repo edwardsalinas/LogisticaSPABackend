@@ -1,4 +1,4 @@
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 
 /**
  * Rate limiting (mitigación de fuerza bruta, scraping y DDoS de capa de aplicación).
@@ -38,9 +38,22 @@ export const publicTrackingLimiter = buildLimiter({
   message: 'Demasiadas consultas de rastreo. Espera un minuto e intenta de nuevo.',
 });
 
+// Con la sesión iniciada se limita por PERSONA: detrás de una oficina o un proxy todos comparten IP, y con el límite por IP una sola
+// persona agotaría el chat de toda la empresa. Sin sesión (no debería ocurrir en estas rutas) se limita por IP.
+const byUser = (req) => (req.user?.id ? `u:${req.user.id}` : ipKeyGenerator(req.ip));
+
 /** Chat con IA: cada mensaje consume tokens del proveedor de LLM. */
 export const chatLimiter = buildLimiter({
   windowMs: 60 * 1000,
   limit: Number(process.env.RATE_LIMIT_CHAT_MAX) || 15,
+  keyGenerator: byUser,
   message: 'Demasiados mensajes al asistente. Espera un minuto.',
+});
+
+/** Eventos de uso de Logi (métricas): una persona no necesita enviar más de unos pocos por minuto; evita llenar la tabla de auditoría. */
+export const logiEventsLimiter = buildLimiter({
+  windowMs: 60 * 1000,
+  limit: Number(process.env.RATE_LIMIT_LOGI_EVENTS_MAX) || 60,
+  keyGenerator: byUser,
+  message: 'Demasiados eventos. Espera un minuto.',
 });

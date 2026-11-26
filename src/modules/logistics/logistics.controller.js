@@ -1,6 +1,7 @@
 import * as LogisticsService from './logistics.service.js';
 import { packageSchema, routeSchema, assignmentSchema } from './logistics.schema.js';
 import { z } from 'zod';
+import { publicError } from '../../shared/errors/publicError.js';
 
 export const handleCreatePackage = async (req, res) => {
   try {
@@ -10,7 +11,7 @@ export const handleCreatePackage = async (req, res) => {
     return res.status(201).json({ success: true, data: result });
   } catch (error) {
     if (error instanceof z.ZodError) return res.status(400).json({ success: false, errors: error.flatten().fieldErrors });
-    return res.status(500).json({ success: false, message: error.message });
+    { const out = publicError(error); return res.status(out.status).json({ success: false, message: out.message }); }
   }
 };
 
@@ -26,7 +27,7 @@ export const handleGetPackages = async (req, res) => {
     const result = await LogisticsService.getPackages(filters);
     return res.status(200).json({ success: true, data: result });
   } catch (error) {
-    return res.status(500).json({ success: false, message: error.message });
+    { const out = publicError(error); return res.status(out.status).json({ success: false, message: out.message }); }
   }
 };
 
@@ -42,7 +43,7 @@ export const handleGetRoutes = async (req, res) => {
     const result = await LogisticsService.getRoutes(filters);
     return res.status(200).json({ success: true, data: result });
   } catch (error) {
-    return res.status(500).json({ success: false, message: error.message });
+    { const out = publicError(error); return res.status(out.status).json({ success: false, message: out.message }); }
   }
 };
 
@@ -53,7 +54,7 @@ export const handleCreateRoute = async (req, res) => {
     return res.status(201).json({ success: true, data: result });
   } catch (error) {
     if (error instanceof z.ZodError) return res.status(400).json({ success: false, errors: error.flatten().fieldErrors });
-    return res.status(500).json({ success: false, message: error.message });
+    { const out = publicError(error); return res.status(out.status).json({ success: false, message: out.message }); }
   }
 };
 
@@ -67,7 +68,7 @@ export const handleAssignPackage = async (req, res) => {
     return res.status(200).json({ success: true, data: result });
   } catch (error) {
     if (error instanceof z.ZodError) return res.status(400).json({ success: false, errors: error.flatten().fieldErrors });
-    return res.status(500).json({ success: false, message: error.message });
+    { const out = publicError(error); return res.status(out.status).json({ success: false, message: out.message }); }
   }
 };
 
@@ -76,7 +77,7 @@ export const handleUnassignPackage = async (req, res) => {
     const result = await LogisticsService.unassignPackageFromRoute(req.params.id, { actor: req.user });
     return res.status(200).json({ success: true, data: result });
   } catch (error) {
-    return res.status(error.status ?? 500).json({ success: false, message: error.message });
+    { const out = publicError(error); return res.status(out.status).json({ success: false, message: out.message }); }
   }
 };
 
@@ -85,7 +86,7 @@ export const handleCancelPackage = async (req, res) => {
     const result = await LogisticsService.cancelNewPackage(req.params.id, { actor: req.user });
     return res.status(200).json({ success: true, data: result });
   } catch (error) {
-    return res.status(error.status ?? 500).json({ success: false, message: error.message });
+    { const out = publicError(error); return res.status(out.status).json({ success: false, message: out.message }); }
   }
 };
 
@@ -94,7 +95,7 @@ export const handleGetPredefinedRoutes = async (req, res) => {
     const result = await LogisticsService.getPredefinedRoutes();
     return res.status(200).json({ success: true, data: result });
   } catch (error) {
-    return res.status(500).json({ success: false, message: error.message });
+    { const out = publicError(error); return res.status(out.status).json({ success: false, message: out.message }); }
   }
 };
 
@@ -106,7 +107,7 @@ export const handleUpdateRoute = async (req, res) => {
     return res.status(200).json({ success: true, data: result });
   } catch (error) {
     if (error instanceof z.ZodError) return res.status(400).json({ success: false, errors: error.flatten().fieldErrors });
-    return res.status(500).json({ success: false, message: error.message });
+    { const out = publicError(error); return res.status(out.status).json({ success: false, message: out.message }); }
   }
 };
 
@@ -116,7 +117,7 @@ export const handleDeleteRoute = async (req, res) => {
     await LogisticsService.deleteRoute(id);
     return res.status(200).json({ success: true, message: 'Ruta eliminada correctamente' });
   } catch (error) {
-    return res.status(500).json({ success: false, message: error.message });
+    { const out = publicError(error); return res.status(out.status).json({ success: false, message: out.message }); }
   }
 };
 
@@ -132,7 +133,7 @@ export const handleGetRoute = async (req, res) => {
 
     return res.status(200).json({ success: true, data: result });
   } catch (error) {
-    return res.status(500).json({ success: false, message: error.message });
+    { const out = publicError(error); return res.status(out.status).json({ success: false, message: out.message }); }
   }
 };
 export const deliverBodySchema = z.object({
