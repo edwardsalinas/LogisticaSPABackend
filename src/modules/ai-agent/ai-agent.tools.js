@@ -5,6 +5,8 @@ import { haversineKm, statisticsService } from '../statistics/statistics.service
 import { PACKAGE_STATUS, ROUTE_STATUS } from '../logistics/logistics.schema.js';
 import { buildActionTools } from './ai-agent.actions.js';
 import { buildAvailabilityTools } from './ai-agent.availability.js';
+import { loadContacts } from './ai-agent.contacts.js';
+import { similarNames } from './ai-agent.sound.js';
 import { buildInsightTools } from './ai-agent.insights.js';
 import { buildSuggestionTools } from './ai-agent.suggestions.js';
 
@@ -33,6 +35,30 @@ export const sanitizeName = (name) =>
   String(name ?? '').normalize('NFC').replace(/[^\p{L}\p{N} '-]/gu, ' ').replace(/\s+/g, ' ').trim();
 
 const DENIED = 'No tienes permiso para consultar esa información.';
+
+/**
+ * La búsqueda por nombre no encontró nada: ¿habrá un nombre CONOCIDO que suene parecido («Kispe» → «Quispe»)? Solo se miran los contactos que
+ * este rol ya puede ver (los de sus paquetes). Con un único nombre parecido se busca con él y se avisa; con varios se pregunta al usuario;
+ * sin ninguno, el mensaje de siempre. Nunca devuelve datos de un nombre que el usuario no haya podido ver.
+ */
+const NOT_FOUND = 'No se encontró ningún paquete asociado a ese nombre.';
+const suggestKnownName = async (user, db, typed, limit) => {
+  try {
+    const { recipients, senders } = await loadContacts(user, db);
+    const names = similarNames(typed, [...recipients, ...senders].map((c) => c.name));
+    if (names.length === 0) return NOT_FOUND;
+    if (names.length > 1) return `${NOT_FOUND} ¿Se refiere a ${names.slice(0, 3).join(' o a ')}? Pregúntale al usuario cuál y vuelve a buscar con ese nombre.`;
+    const clean = sanitizeName(names[0]);
+    let q = db.from('packages').select('tracking_code, status, origen, destino, recipient_name, sender_name, created_at')
+      .or(`recipient_name.ilike.%${clean}%,sender_name.ilike.%${clean}%`).order('created_at', { ascending: false }).limit(limit);
+    if (user.role === 'client') q = q.eq('sender_id', user.id);
+    const { data, error } = await q;
+    if (error || !data?.length) return NOT_FOUND;
+    return asText({ matches: data, note: `No había nadie llamado «${typed}»; estos son de «${names[0]}», que suena parecido. Dile al usuario que lo verifique.` });
+  } catch {
+    return NOT_FOUND; // la sugerencia es un extra: si falla, se responde como siempre
+  }
+};
 const MAX_LIST = 8;
 
 // Inicio del día de hoy en Bolivia (UTC-4), en ISO
@@ -224,7 +250,7 @@ export const buildTools = (user, db = supabase, statsService = statisticsService
 
         const { data, error } = await query;
         if (error) throw error;
-        if (!data || data.length === 0) return 'No se encontró ningún paquete asociado a ese nombre.';
+        if (!data || data.length === 0) return suggestKnownName(user, db, safe, MAX_PEOPLE_RESULTS);
         return asText({ matches: data, note: data.length === MAX_PEOPLE_RESULTS ? 'Se muestran los más recientes; pide más datos si no es el correcto.' : undefined });
       } catch (e) {
         return `No se pudo buscar por nombre: ${e.message}`;
