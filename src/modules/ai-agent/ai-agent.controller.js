@@ -6,6 +6,7 @@ import supabase from '../../shared/config/supabase.js';
 import { resolveConversation, saveTurn, listConversations, getConversation, deleteConversation } from './ai-conversations.service.js';
 import { recordChat, recordLogiEvent, usageReport, LOGI_EVENTS } from './ai-audit.service.js';
 import { buildAlerts } from './ai-agent.alerts.js';
+import { loadContacts } from './ai-agent.contacts.js';
 import { prepareAssignProposal, prepareCreateProposal, prepareEventProposal } from './ai-agent.actions.js';
 import { validateImage, extractFromImage } from './ai-agent.documents.js';
 
@@ -249,6 +250,16 @@ export const handleAlerts = async (req, res) => {
   } catch (error) {
     console.error('[AI Alerts Error]:', error);
     return res.status(500).json({ success: false, message: 'No se pudieron calcular los avisos.' });
+  }
+};
+
+/** Remitentes y destinatarios frecuentes de los paquetes que la persona ya puede ver (para que la voz los reconozca). */
+export const handleContacts = async (req, res) => {
+  try {
+    return res.status(200).json({ success: true, data: await loadContacts(req.user, db) });
+  } catch (error) {
+    console.error('[AI Contacts Error]:', error);
+    return res.status(500).json({ success: false, message: 'No se pudieron cargar los contactos.' });
   }
 };
 

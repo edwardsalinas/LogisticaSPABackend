@@ -16,6 +16,7 @@ router.get('/usage', requireRole(['admin']), AiAgentController.handleUsage);
 router.get('/alerts', AiAgentController.handleAlerts); // cada rol recibe los suyos: el servidor decide qué ve cada uno
 
 /** Eventos de uso de Logi (avisos aceptados, acciones hechas…) para las métricas del panel de uso. Solo cuentan eventos, no contenido. */
+router.get('/contacts', AiAgentController.handleContacts); // remitentes y destinatarios frecuentes; el servidor decide qué ve cada rol
 router.post('/logi-events', logiEventsLimiter, AiAgentController.handleLogiEvent);
 
 /** Historial: cada usuario ve, abre y borra solo SUS conversaciones. */
