@@ -1,5 +1,7 @@
 import { createHash } from 'node:crypto';
 import { loadAssignmentPlan } from './ai-agent.suggestions.js';
+import { enrichTrips } from './ai-agent.availability.js';
+import { tripLabel } from './ai-agent.labels.js';
 
 /**
  * Avisos proactivos de Logi: excepciones reales de la operación, calculadas por el servidor (reglas fijas, SIN modelo de
@@ -75,15 +77,82 @@ const noDriverAlert = (routes, now) => {
   };
 };
 
+// ---------------------------------------------------------------- personal: más excepciones de la operación
+const STUCK_AGENCY_MS = 48 * HOUR_MS; // un paquete que lleva más de 2 días en agencia sin moverse
+const STUCK_MAX_AGE_MS = 30 * 24 * HOUR_MS; // y se avisa hasta 30 días (más viejo ya es otro problema)
+const FULL_RATIO = 0.9; // un viaje con el 90 % de su capacidad ocupada está casi lleno
+const FULL_WINDOW_MS = 24 * HOUR_MS; // solo los que salen en las próximas 24 horas
+const pct = (n) => `${Math.round(n)} %`;
+const staffCodes = (list) => {
+  const codes = list.map((p) => p.tracking_code);
+  return codes.length <= 2 ? codes.join(' y ') : `${codes.slice(0, 2).join(', ')} y ${codes.length - 2} más`;
+};
+const packageOrList = (list) => (list.length === 1
+  ? { kind: 'navigate', to: `/logistics/packages/${list[0].id}`, label: 'Ver el paquete' }
+  : { kind: 'navigate', to: '/tracking', label: 'Ver el seguimiento' });
+
+/** Paquetes con siniestro (urgencia alta) o devueltos (la entrega falló y volvieron). Mientras sigan en ese estado, nadie los atendió. */
+const incidentAlert = (incidents) => {
+  const lost = incidents.filter((p) => p.status === 'siniestro');
+  const back = incidents.filter((p) => p.status === 'devuelto');
+  const parts = [];
+  if (lost.length) parts.push(`${plural(lost.length, 'paquete con siniestro', 'paquetes con siniestro')} (${staffCodes(lost)})`);
+  if (back.length) parts.push(`${plural(back.length, 'paquete devuelto', 'paquetes devueltos')} por una entrega fallida (${staffCodes(back)})`);
+  return {
+    id: `incident:${shortId(incidents.map((p) => p.id).sort().join(','))}`,
+    type: 'incident',
+    severity: lost.length ? 'high' : 'medium',
+    title: lost.length ? 'Hay paquetes con siniestro' : 'Hay entregas fallidas',
+    text: `${parts.join(' y ')}. Siguen sin resolverse.`,
+    action: packageOrList(incidents),
+  };
+};
+
+/** Paquetes parados en agencia más de 2 días. `stuck` trae { id, tracking_code, hours }. */
+const stuckAlert = (stuck) => {
+  const oldest = [...stuck].sort((a, b) => b.hours - a.hours)[0];
+  const days = Math.floor(oldest.hours / 24);
+  return {
+    id: `stuck_agency:${shortId(stuck.map((p) => p.id).sort().join(','))}`,
+    type: 'stuck_agency',
+    severity: 'medium',
+    title: stuck.length === 1 ? 'Un paquete lleva días en agencia' : 'Paquetes parados en agencia',
+    text: stuck.length === 1
+      ? `El paquete ${oldest.tracking_code} lleva ${days} ${days === 1 ? 'día' : 'días'} en agencia sin moverse.`
+      : `${stuck.length} paquetes llevan más de 2 días en agencia (el más antiguo, ${oldest.tracking_code}, ${days} días).`,
+    action: packageOrList(stuck),
+  };
+};
+
+/** Viajes que salen pronto y están casi llenos o pasados de su capacidad. `full` trae viajes ya enriquecidos (capacity_kg, used_kg, free_kg). */
+const fullAlert = (full, now) => {
+  const over = full.filter((t) => t.free_kg < 0);
+  const first = full[0];
+  const ratio = (t) => (t.used_kg / t.capacity_kg) * 100;
+  return {
+    id: `trip_full:${shortId(full.map((t) => t.ref).sort().join(','))}`,
+    type: 'trip_full',
+    severity: over.length ? 'high' : 'medium',
+    title: over.length ? 'Un viaje excede su capacidad' : full.length === 1 ? 'Un viaje está casi lleno' : 'Viajes casi llenos',
+    text: full.length === 1
+      ? `${tripLabel(first, now)} lleva ${first.used_kg} kg de ${first.capacity_kg} kg (${pct(ratio(first))})${first.free_kg < 0 ? `: se pasa por ${Math.abs(first.free_kg)} kg` : `: quedan ${first.free_kg} kg`}.`
+      : `${full.length} viajes que salen en las próximas 24 horas están al 90 % o más de su capacidad (el primero, ${tripLabel(first, now)}, ${pct(ratio(first))}).`,
+    action: { kind: 'navigate', to: '/logistics/routes', label: 'Ver los viajes' },
+  };
+};
+
 /**
  * Convierte los datos ya leídos en avisos ordenados por urgencia. Función pura (fácil de probar).
- * @param {{ group?: object|null, delayed?: object[], noDriver?: object[], now?: number }} input
+ * @param {{ group?: object|null, delayed?: object[], noDriver?: object[], incidents?: object[], stuck?: object[], full?: object[], now?: number }} input
  */
-export const planAlerts = ({ group = null, delayed = [], noDriver = [], now = Date.now() }) => {
+export const planAlerts = ({ group = null, delayed = [], noDriver = [], incidents = [], stuck = [], full = [], now = Date.now() }) => {
   const alerts = [];
   if (delayed.length) alerts.push(delayedAlert(delayed));
+  if (incidents.length) alerts.push(incidentAlert(incidents));
+  if (full.length) alerts.push(fullAlert(full, now));
   if (group && group.packages?.length) alerts.push(assignAlert(group, now));
   if (noDriver.length) alerts.push(noDriverAlert(noDriver, now));
+  if (stuck.length) alerts.push(stuckAlert(stuck));
   return alerts.sort((a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity]).slice(0, MAX_ALERTS);
 };
 
@@ -241,13 +310,46 @@ export const buildDriverAlerts = async (user, db, now = Date.now()) => {
   return planDriverAlerts({ routes: list, loads, now });
 };
 
+/** Paquetes con siniestro o devueltos (creados en los últimos 30 días) que siguen en ese estado. */
+export const loadIncidents = async (db, now) => {
+  const { data } = await db.from('packages').select('id, tracking_code, status')
+    .in('status', ['siniestro', 'devuelto']).gte('created_at', new Date(now - STUCK_MAX_AGE_MS).toISOString())
+    .order('created_at', { ascending: false }).limit(30);
+  return data ?? [];
+};
+
+/** Paquetes en agencia cuyo último movimiento fue hace más de 2 días (y menos de 30). */
+export const loadStuckInAgency = async (db, now) => {
+  const { data: pkgs } = await db.from('packages').select('id, tracking_code, created_at').eq('status', 'en_agencia').limit(50);
+  const list = pkgs ?? [];
+  if (!list.length) return [];
+  const { data: logs } = await db.from('tracking_logs').select('package_id, timestamp').in('package_id', list.map((p) => p.id)).order('timestamp', { ascending: false }).limit(400);
+  const last = {};
+  for (const l of logs ?? []) if (!last[l.package_id] || Date.parse(l.timestamp) > Date.parse(last[l.package_id])) last[l.package_id] = l.timestamp;
+  return list
+    .map((p) => ({ id: p.id, tracking_code: p.tracking_code, hours: (now - Date.parse(last[p.id] ?? p.created_at)) / HOUR_MS }))
+    .filter((p) => p.hours * HOUR_MS >= STUCK_AGENCY_MS && p.hours * HOUR_MS <= STUCK_MAX_AGE_MS)
+    .sort((a, b) => b.hours - a.hours);
+};
+
+/** Viajes planeados que salen en las próximas 24 horas con el 90 % o más de la capacidad de su vehículo ocupada. */
+export const loadFullTrips = async (db, now) => {
+  const { data: routes } = await db.from('transport_routes')
+    .select('id, route_code, origin, destination, departure_time, estimated_arrival, vehicle_id')
+    .eq('status', 'planeada').gte('departure_time', new Date(now).toISOString()).lte('departure_time', new Date(now + FULL_WINDOW_MS).toISOString())
+    .order('departure_time', { ascending: true }).limit(20);
+  if (!routes?.length) return [];
+  const trips = await enrichTrips(db, routes);
+  return trips.filter((t) => t.capacity_kg > 0 && t.used_kg / t.capacity_kg >= FULL_RATIO);
+};
+
 /** Lee la base y arma los avisos del usuario. Nunca lanza por una consulta fallida: un aviso de menos no rompe nada. */
 export const buildAlerts = async (user, db, now = Date.now()) => {
   if (user.role === 'client') return buildClientAlerts(user, db, now).catch(() => []);
   if (user.role === 'driver') return buildDriverAlerts(user, db, now).catch(() => []);
   if (!OPS.includes(user.role)) return [];
   const cols = 'id, route_code, origin, destination, departure_time, driver_id';
-  const [plan, delayed, noDriver] = await Promise.all([
+  const [plan, delayed, noDriver, incidents, stuck, full] = await Promise.all([
     loadAssignmentPlan(db, now).catch(() => ({ groups: [] })),
     db.from('transport_routes').select(cols).eq('status', 'planeada')
       .lt('departure_time', new Date(now - DELAY_GRACE_MS).toISOString()).gt('departure_time', new Date(now - DELAY_WINDOW_MS).toISOString())
@@ -255,6 +357,9 @@ export const buildAlerts = async (user, db, now = Date.now()) => {
     db.from('transport_routes').select(cols).eq('status', 'planeada').is('driver_id', null)
       .gte('departure_time', new Date(now).toISOString()).lte('departure_time', new Date(now + NO_DRIVER_WINDOW_MS).toISOString())
       .order('departure_time', { ascending: true }).limit(20),
+    loadIncidents(db, now).catch(() => []),
+    loadStuckInAgency(db, now).catch(() => []),
+    loadFullTrips(db, now).catch(() => []),
   ]);
-  return planAlerts({ group: plan.groups?.[0] ?? null, delayed: delayed.data ?? [], noDriver: noDriver.data ?? [], now });
+  return planAlerts({ group: plan.groups?.[0] ?? null, delayed: delayed.data ?? [], noDriver: noDriver.data ?? [], incidents, stuck, full, now });
 };
