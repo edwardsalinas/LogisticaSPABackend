@@ -72,6 +72,31 @@ export const removeSubscription = async (db, user, endpoint) => {
   if (error) throw isMissingTable(error) ? unavailable() : error;
 };
 
+/**
+ * «Enviar prueba»: manda AHORA una notificación a los navegadores de QUIEN la pide (nunca a los de otra persona), sin esperar a que haya un
+ * aviso real ni respetar el «no molestar» de la ronda: sirve para comprobar en un celular o un navegador que las notificaciones llegan.
+ * Una suscripción que el navegador ya no acepta (404 o 410) se borra, igual que en la ronda.
+ */
+export const TEST_PAYLOAD = { title: 'Logi', body: 'Prueba: así verás los avisos con la pestaña cerrada.', url: '/', tag: 'logi-prueba', urgent: false };
+
+export const sendTestPush = async ({ db, user, send, log = console }) => {
+  const { data, error } = await db.from('push_subscriptions').select('id, endpoint, p256dh, auth').eq('user_id', user.id);
+  if (error) throw isMissingTable(error) ? unavailable() : error;
+  if (!data?.length) throw Object.assign(new Error('Primero activa los avisos con la pestaña cerrada en este navegador.'), { status: 404 });
+  let sent = 0;
+  let removed = 0;
+  for (const s of data) {
+    try {
+      await send({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } }, TEST_PAYLOAD);
+      sent += 1;
+    } catch (e) {
+      if (e?.statusCode === 404 || e?.statusCode === 410) { await db.from('push_subscriptions').delete().eq('id', s.id); removed += 1; }
+      else log.error?.('[Push] la prueba no se pudo enviar:', e?.statusCode ?? e?.message);
+    }
+  }
+  return { sent, removed, total: data.length };
+};
+
 // ============================================================ qué se envía a cada persona
 const safePath = (to) => (typeof to === 'string' && /^\/(?!\/)[^\s]*$/.test(to) ? to : '/');
 

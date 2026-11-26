@@ -313,3 +313,87 @@ test('el límite de cambios es POR PERSONA (30 por hora)', async () => {
     assert.equal(await hit('beto'), 204);
   } finally { await new Promise((r) => server.close(r)); }
 });
+
+// ============================================================ «Enviar prueba»
+import { TEST_PAYLOAD, sendTestPush } from '../../src/modules/notifications/push.service.js';
+
+test('la prueba se envía SOLO a los navegadores de quien la pide, con el texto fijo y sin respetar el «no molestar»', async () => {
+  const rows = [
+    sub({ id: 's1', user_id: 'u1', last_pushed_at: ago(60 * 1000) }), // acaba de recibir un aviso: la prueba igual sale
+    sub({ id: 's2', user_id: 'u1', endpoint: 'https://fcm.googleapis.com/fcm/send/segundo' }),
+    sub({ id: 's3', user_id: 'u2', endpoint: 'https://fcm.googleapis.com/fcm/send/ajeno' }),
+  ];
+  const db = fakeDb(rows);
+  const sent = [];
+  const out = await sendTestPush({ db, user: { id: 'u1' }, send: async (s, p) => { sent.push([s.endpoint, p]); } });
+  assert.deepEqual(out, { sent: 2, removed: 0, total: 2 });
+  assert.deepEqual(sent.map(([e]) => e).sort(), [GOOD, 'https://fcm.googleapis.com/fcm/send/segundo'].sort());
+  assert.equal(sent.some(([e]) => e.endsWith('/ajeno')), false, 'nunca a la suscripción de otra persona');
+  for (const [, p] of sent) assert.deepEqual(p, TEST_PAYLOAD);
+  assert.doesNotMatch(JSON.stringify(TEST_PAYLOAD), /TRK-/);
+  assert.equal(db.state.rows.find((r) => r.id === 's1').sent_alert_ids && Object.keys(db.state.rows.find((r) => r.id === 's1').sent_alert_ids).length, 0, 'la prueba no marca avisos como enviados');
+});
+
+test('sin suscripciones: 404 con un mensaje que dice qué hacer', async () => {
+  await assert.rejects(sendTestPush({ db: fakeDb([sub({ user_id: 'otro' })]), user: { id: 'u1' }, send: async () => {} }), (e) => e.status === 404 && /Primero activa los avisos/.test(e.message));
+});
+
+test('una suscripción que el navegador ya no acepta (410) se borra; otro error no la borra', async () => {
+  const gone = fakeDb([sub({ id: 'a' }), sub({ id: 'b', endpoint: 'https://fcm.googleapis.com/fcm/send/b' })]);
+  const out = await sendTestPush({ db: gone, user: { id: 'u1' }, log: { error() {} }, send: async (s) => { if (s.endpoint === GOOD) throw Object.assign(new Error('gone'), { statusCode: 410 }); } });
+  assert.deepEqual(out, { sent: 1, removed: 1, total: 2 });
+  assert.deepEqual(gone.state.rows.map((r) => r.id), ['b']);
+  const flaky = fakeDb([sub()]);
+  const out2 = await sendTestPush({ db: flaky, user: { id: 'u1' }, log: { error() {} }, send: async () => { throw Object.assign(new Error('x'), { statusCode: 500 }); } });
+  assert.deepEqual(out2, { sent: 0, removed: 0, total: 1 });
+  assert.equal(flaky.state.rows.length, 1);
+});
+
+test('sin la tabla: 503 «no disponible» sin detalles internos', async () => {
+  await assert.rejects(sendTestPush({ db: fakeDb([], { missing: true }), user: { id: 'u1' }, send: async () => {} }), (e) => e.status === 503 && !/relation|push_subscriptions/.test(e.message));
+});
+
+test('el controlador de la prueba: 200 si llegó a alguno, 404 sin suscripción, 502 si no se pudo enviar a ninguno', async () => {
+  const user = { id: 'u1', role: 'client' };
+  controller._useDb(fakeDb([sub()]));
+  try {
+    controller._useSender(async () => {});
+    const ok = reply();
+    await controller.handleTest({ user }, ok);
+    assert.equal(ok.code, 200);
+    assert.deepEqual(ok.body.data, { sent: 1, removed: 0, total: 1 });
+
+    controller._useSender(async () => { throw Object.assign(new Error('boom'), { statusCode: 500 }); });
+    const bad = reply();
+    const origError = console.error; console.error = () => {};
+    await controller.handleTest({ user }, bad);
+    console.error = origError;
+    assert.equal(bad.code, 502);
+    assert.doesNotMatch(JSON.stringify(bad.body), /boom|statusCode/);
+
+    controller._useDb(fakeDb([]));
+    const none = reply();
+    await controller.handleTest({ user }, none);
+    assert.equal(none.code, 404);
+    assert.match(none.body.message, /Primero activa/);
+  } finally { controller._useDb(null); controller._useSender(null); }
+});
+
+test('el límite de pruebas es POR PERSONA (6 por hora)', async () => {
+  const { pushTestLimiter } = await import('../../src/shared/middlewares/rateLimit.js');
+  const app = express();
+  app.use((req, _res, next) => { req.user = { id: req.headers['x-user'] }; next(); });
+  app.post('/', pushTestLimiter, (_req, r) => r.status(204).end());
+  const server = http.createServer(app);
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  const hit = (user) => new Promise((resolve, reject) => {
+    const req = http.request({ host: '127.0.0.1', port: server.address().port, method: 'POST', path: '/', headers: { 'x-user': user } }, (r) => { r.resume(); r.on('end', () => resolve(r.statusCode)); });
+    req.on('error', reject); req.end();
+  });
+  try {
+    const codes = [];
+    for (let i = 0; i < 9; i += 1) codes.push(await hit('ana'));
+    assert.equal(codes.filter((c) => c === 204).length, 6);
+    assert.equal(await hit('beto'), 204);
+  } finally { await new Promise((r) => server.close(r)); }
+});

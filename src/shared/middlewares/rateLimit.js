@@ -58,6 +58,14 @@ export const pushLimiter = buildLimiter({
   message: 'Demasiados cambios en los avisos. Inténtalo más tarde.',
 });
 
+/** Notificación de prueba: unas pocas por hora y por persona (cada una llega a un celular real). */
+export const pushTestLimiter = buildLimiter({
+  windowMs: 60 * 60 * 1000,
+  limit: Number(process.env.RATE_LIMIT_PUSH_TEST_MAX) || 6,
+  keyGenerator: byUser,
+  message: 'Demasiadas pruebas. Inténtalo más tarde.',
+});
+
 /** Eventos de uso de Logi (métricas): una persona no necesita enviar más de unos pocos por minuto; evita llenar la tabla de auditoría. */
 export const logiEventsLimiter = buildLimiter({
   windowMs: 60 * 1000,
