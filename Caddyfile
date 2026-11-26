@@ -1,0 +1,11 @@
+# Caddy: HTTPS automático delante del frontend (nginx), que a su vez reenvía /api al backend.
+# {$DOMAIN} sale de la variable DOMAIN (ver docker-compose.https.yml). Con «localhost» Caddy firma con su propia autoridad local.
+{$DOMAIN:localhost} {
+	encode zstd gzip
+
+	# nginx ya fija la política de contenido y las cabeceras de seguridad de la página; Caddy no las toca.
+	# La respuesta en vivo del asistente (SSE) no debe acumularse: se envía tal cual a medida que llega.
+	reverse_proxy frontend:80 {
+		flush_interval -1
+	}
+}

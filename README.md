@@ -196,6 +196,8 @@ El conductor puede perder señal durante el viaje. El frontend guarda cada lectu
 
 ## Despliegue con Docker Compose
 
+> ¿Servidor propio con dominio y HTTPS (necesario para el micrófono y las notificaciones fuera de localhost)? Ver [docs/DESPLIEGUE.md](docs/DESPLIEGUE.md).
+
 `docker-compose.yml` levanta el **backend** (Node.js) y el **frontend** (nginx sirviendo la SPA y haciendo de proxy de `/api`, de modo que la cookie de sesión funciona sin CORS). La base de datos y la autenticación las provee Supabase Cloud.
 
 Requiere ambos repositorios clonados lado a lado:
