@@ -3,6 +3,7 @@
  *
  *   node --env-file=.env scripts/seed-demo.mjs            # crea los datos
  *   node --env-file=.env scripts/seed-demo.mjs --remove   # los borra (solo los marcados DEMO-LOGI)
+ *   node --env-file=.env scripts/seed-demo.mjs --estado   # dice si hay datos de demostración (no cambia nada)
  *
  * Crea: un viaje La Paz → Oruro que sale en ~10 h con conductor y 3 paquetes sueltos del mismo trayecto (aviso «Paquetes sueltos»),
  * un viaje Cochabamba → Santa Cruz que sale en ~20 h SIN conductor (aviso «Viaje sin conductor»), y un viaje Oruro → Potosí que debió
@@ -25,6 +26,12 @@ const must = (label, { data, error }) => {
 
 const existingRoutes = must('buscar viajes de demo', await db.from('transport_routes').select('id').like('route_code', `${MARK}%`)) ?? [];
 const existingPkgs = must('buscar paquetes de demo', await db.from('packages').select('id').like('description', `${MARK}%`)) ?? [];
+
+// ---- estado: ¿hay datos de demostración? (lo usa el ejecutor de pruebas e2e; no cambia nada)
+if (process.argv.includes('--estado')) {
+  console.log(existingRoutes.length || existingPkgs.length ? `estado: presentes (${existingPkgs.length} paquetes, ${existingRoutes.length} viajes)` : 'estado: ausentes');
+  process.exit(0);
+}
 
 // ---- borrado: solo lo marcado
 if (remove) {
