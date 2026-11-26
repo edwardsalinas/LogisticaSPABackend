@@ -11,6 +11,9 @@ export const PACKAGE_STATUS = {
   CANCELLED: 'cancelado',
 };
 
+/** Cuánto tiempo después de crearlo se puede anular un paquete (vive aquí, sin dependencias, para que otros módulos lo lean sin cargar la base de datos). */
+export const CANCEL_WINDOW_MS = 2 * 60 * 60 * 1000;
+
 export const ROUTE_STATUS = {
   PLANNED: 'planeada',
   ACTIVE: 'en_transito',

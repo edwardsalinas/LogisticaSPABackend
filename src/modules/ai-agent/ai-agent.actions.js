@@ -1,6 +1,8 @@
 import { tool } from '@langchain/core/tools';
 import { z } from 'zod';
 import { createProposal } from './ai-actions.service.js';
+import { proposalResult } from './ai-proposal-result.js';
+import { prepareCancelProposal, prepareDriverProposal, prepareTripProposal } from './ai-agent.fleet-actions.js';
 import { PACKAGE_STATUS, packageSchema } from '../logistics/logistics.schema.js';
 
 /**
@@ -24,13 +26,6 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
 
 const asText = (value) => JSON.stringify(value);
-const proposalResult = (proposal, skipped = []) => asText({
-  kind: 'action_proposal',
-  action: proposal,
-  skipped, // lo que se pidió pero no se pudo incluir, con el motivo (para decírselo al usuario)
-  instruction: 'La acción NO se ha ejecutado. Dile al usuario que revise la tarjeta y pulse Confirmar; no afirmes que ya está hecha.' +
-    (skipped.length ? ' Menciona también lo que se omitió y por qué.' : ''),
-});
 
 const cleanNote = (note) => {
   const n = typeof note === 'string' ? note.trim() : '';
@@ -409,5 +404,46 @@ export const buildActionTools = (user, db) => {
     }
   );
 
-  return [proposeEvent, proposeDeliver, proposeCreate, proposeAssign];
+  // ------------------------------------------------------------------ anular un paquete recién creado
+  const proposeCancel = tool(
+    async (args) => prepareCancelProposal(user, db, args),
+    {
+      name: 'propose_cancel_package',
+      description: 'PROPONE anular un paquete. Llámala siempre que el usuario pida anular o cancelar un paquete: el servidor comprueba si se puede (pendiente, sin viaje y reciente) y responde con la propuesta o con el motivo; no lo decidas tú. Lo anulado no se puede volver a usar.',
+      schema: z.object({ code: z.string().describe('Código de rastreo del paquete (empieza con TRK-)') }),
+    }
+  );
+
+  // ------------------------------------------------------------------ asignar conductor (y vehículo) a un viaje planeado
+  const proposeDriver = tool(
+    async (args) => prepareDriverProposal(user, db, args),
+    {
+      name: 'propose_assign_driver',
+      description: 'PROPONE asignar un conductor (y, si se pide, un vehículo) a un viaje PLANEADO. Para elegir el viaje usa antes find_available_trips y pasa su campo ref. Si hay varios conductores con ese nombre, pregunta cuál.',
+      schema: z.object({
+        route_ref: z.string().describe('Viaje: el campo ref devuelto por find_available_trips'),
+        driver_name: z.string().describe('Nombre del conductor, tal como lo dijo el usuario'),
+        vehicle_plate: z.string().optional().describe('Placa del vehículo, solo si el usuario la pidió'),
+      }),
+    }
+  );
+
+  // ------------------------------------------------------------------ crear un viaje
+  const proposeTrip = tool(
+    async (args) => prepareTripProposal(user, db, args),
+    {
+      name: 'propose_create_trip',
+      description: 'PROPONE crear un viaje nuevo entre dos ciudades con un trayecto definido, con fecha y hora de salida (hora de Bolivia) y, si se pide, conductor y vehículo. Si el usuario no dio la fecha o la hora, pregúntalas: nunca las inventes.',
+      schema: z.object({
+        origin: z.string().describe('Ciudad de origen'),
+        destination: z.string().describe('Ciudad de destino'),
+        date: z.string().describe('Fecha de salida AAAA-MM-DD (hora de Bolivia)'),
+        time: z.string().describe('Hora de salida HH:mm (24 horas, hora de Bolivia)'),
+        driver_name: z.string().optional().describe('Nombre del conductor, solo si el usuario lo pidió'),
+        vehicle_plate: z.string().optional().describe('Placa del vehículo, solo si el usuario la pidió'),
+      }),
+    }
+  );
+
+  return [proposeEvent, proposeDeliver, proposeCreate, proposeAssign, proposeCancel, proposeDriver, proposeTrip];
 };

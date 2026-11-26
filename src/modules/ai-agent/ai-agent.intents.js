@@ -35,8 +35,8 @@ const GROUPS = {
     re: /\b(suelt\w+|sin asignar|sin viaje|sin ruta|sugier\w+|sugerenc\w+|recomiend\w+|optimiz\w+|reparto|repartir|que puedo asignar|asignaciones)\b/,
   },
   actions: {
-    tools: ['propose_register_event', 'propose_deliver_package', 'propose_create_package', 'propose_assign_package'],
-    re: /\b(registra\w*|crea\w*|nuevo paquete|entrega\w*|entregar|marca\w*|asigna\w*|evento|agrega\w*|anota\w*|confirma\w*|cancela\w*|despacha\w*|cargar|carga)\b/,
+    tools: ['propose_register_event', 'propose_deliver_package', 'propose_create_package', 'propose_assign_package', 'propose_cancel_package', 'propose_assign_driver', 'propose_create_trip'],
+    re: /\b(registra\w*|crea\w*|nuevo paquete|entrega\w*|entregar|marca\w*|asigna\w*|evento|agrega\w*|anota\w*|confirma\w*|cancela\w*|anula\w*|despacha\w*|cargar|carga|conductor\w*|chofer\w*|programa\w*|cambia\w*)\b/,
   },
 };
 

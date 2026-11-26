@@ -1,7 +1,7 @@
 import supabase from '../../shared/config/supabase.js';
 import { randomBytes } from 'node:crypto';
 import eventBus from '../../shared/utils/eventBus.js';
-import { PACKAGE_STATUS, ROUTE_STATUS } from './logistics.schema.js';
+import { PACKAGE_STATUS, ROUTE_STATUS, CANCEL_WINDOW_MS } from './logistics.schema.js';
 
 /**
  * Registra un nuevo paquete
@@ -245,7 +245,7 @@ export const unassignPackageFromRoute = async (packageId, { actor = null, db = s
 };
 
 /** Ventana para anular un paquete recién creado desde «Deshacer»: pasada, ya es un registro con historia. */
-export const CANCEL_WINDOW_MS = 2 * 60 * 60 * 1000;
+export { CANCEL_WINDOW_MS };
 
 /**
  * Deshacer la creación de un paquete: lo marca «cancelado» (no se borra, queda el historial). Solo si sigue «pendiente»,

@@ -23,6 +23,9 @@ export const ACTION_ROLES = {
   deliver_package: [...OPS, 'driver'],
   create_package: OPS,
   assign_package: OPS,
+  cancel_package: OPS,
+  assign_driver: OPS,
+  create_trip: OPS,
 };
 
 const store = new Map();
