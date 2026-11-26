@@ -1,0 +1,50 @@
+# Despliegue con HTTPS: se superpone a docker-compose.yml y pone Caddy delante (certificado automático de Let's Encrypt).
+#
+#   docker compose -f docker-compose.yml -f docker-compose.https.yml up -d --build
+#
+# Variables (en el .env de esta carpeta):
+#   DOMAIN       el dominio público, por ejemplo logistica.miempresa.com (el DNS debe apuntar a este servidor, y los puertos 80 y 443 abiertos).
+#                Con DOMAIN=localhost Caddy usa un certificado propio (para probar en el mismo equipo; el navegador avisará que no es de confianza).
+#   PUBLIC_URL   la dirección pública COMPLETA, con https y, si el puerto no es el 443, con él: https://logistica.miempresa.com
+#   HTTPS_PORT   puerto del host para HTTPS (por defecto 443)
+#   HTTP_PORT    puerto del host para HTTP, que Caddy redirige a HTTPS (por defecto 80)
+#
+# Qué cambia respecto al despliegue sin HTTPS:
+#   - el frontend ya no se publica: solo Caddy recibe tráfico de fuera;
+#   - las cookies de sesión pasan a «Secure» (solo viajan por HTTPS);
+#   - TRUST_PROXY=2: hay DOS proxies delante del backend (Caddy y nginx); con 1, todas las personas parecerían tener la IP de Caddy y los límites
+#     de intentos por IP se compartirían entre todos;
+#   - CORS_ORIGIN es el dominio con HTTPS.
+# Detalles y comprobaciones: docs/DESPLIEGUE.md
+
+services:
+  backend:
+    environment:
+      COOKIE_SECURE: "true"
+      TRUST_PROXY: "2"
+      CORS_ORIGIN: ${PUBLIC_URL:-https://localhost}
+
+  frontend:
+    # nginx deja de publicarse en el host: solo Caddy lo alcanza por la red interna
+    ports: !reset []
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: logistica-caddy
+    restart: unless-stopped
+    depends_on:
+      frontend:
+        condition: service_healthy
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data      # certificados: no borrar, o se piden de nuevo (Let's Encrypt limita los intentos)
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:
