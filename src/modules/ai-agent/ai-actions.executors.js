@@ -3,6 +3,7 @@ import * as TrackingService from '../tracking/tracking.service.js';
 import * as LogisticsService from '../logistics/logistics.service.js';
 import { PACKAGE_STATUS } from '../logistics/logistics.schema.js';
 import { checkRouteForPackage } from './ai-agent.actions.js';
+import { applyAssignDriver } from './ai-agent.fleet-actions.js';
 
 /**
  * Qué hace cada acción al confirmarse. Reutiliza los MISMOS servicios que la API REST y la interfaz clásica,
@@ -95,6 +96,24 @@ const rawExecutors = {
       one: (code) => `Paquete ${code} asignado al viaje.`,
       many: (n, total) => `Asignados ${n} de ${total} paquetes al viaje.`,
     });
+  },
+
+  // Anular: el mismo servicio que «Deshacer» la creación (solo paquetes pendientes, sin viaje y recientes)
+  async cancel_package(p, user) {
+    const outcome = await runBatch(p.items, (item) => LogisticsService.cancelNewPackage(item.package_id, { actor: user }));
+    return summarize(outcome, {
+      one: (code) => `Paquete ${code} anulado.`,
+      many: (n, total) => `Anulados ${n} de ${total} paquetes.`,
+    });
+  },
+
+  async assign_driver(p, _user) {
+    return applyAssignDriver(supabase, p);
+  },
+
+  async create_trip(p, _user) {
+    const route = await LogisticsService.createRoute(p.route);
+    return { message: 'Viaje creado.', data: { route_id: route?.id ?? route?.route?.id ?? null } };
   },
 };
 
