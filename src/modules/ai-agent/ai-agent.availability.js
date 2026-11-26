@@ -82,6 +82,10 @@ export const enrichTrips = async (db, list, kg = null) => {
     });
 };
 
+// Reloj de las consultas (se puede fijar en las pruebas: «disponible» depende de la hora actual)
+let clock = () => Date.now();
+export const _useClock = (fn) => { clock = fn ?? (() => Date.now()); };
+
 export const buildAvailabilityTools = (user, db) => {
   const findAvailableTrips = tool(
     async ({ date, from_time, to_time, origin, destination, weight_kg }) => {
@@ -104,7 +108,10 @@ export const buildAvailabilityTools = (user, db) => {
           return q;
         };
 
-        const { data: routes, error } = await base().gte('departure_time', win.fromISO).lte('departure_time', win.toISO).limit(MAX_TRIPS);
+        // «Disponible» es lo que AÚN no salió: un viaje planeado cuya hora ya pasó no se ofrece (para eso está el aviso de viajes sin salir)
+        const nowMs = clock();
+        const fromISO = new Date(Math.max(win.start, nowMs)).toISOString();
+        const { data: routes, error } = await base().gte('departure_time', fromISO).lte('departure_time', win.toISO).limit(MAX_TRIPS);
         if (error) throw error;
 
         const enrich = (list) => enrichTrips(db, list, kg);
@@ -113,7 +120,7 @@ export const buildAvailabilityTools = (user, db) => {
         // Si no hay nada en esa ventana, se ofrecen los siguientes viajes (14 días) para que la conversación avance
         let alternatives = [];
         if (trips.length === 0) {
-          const { data: next } = await base().gte('departure_time', win.toISO).lte('departure_time', new Date(win.end + 14 * DAY_MS).toISOString()).limit(3);
+          const { data: next } = await base().gte('departure_time', new Date(Math.max(win.end, nowMs)).toISOString()).lte('departure_time', new Date(win.end + 14 * DAY_MS).toISOString()).limit(3);
           alternatives = await enrich(next || []);
         }
         return asText({

@@ -1,7 +1,7 @@
 import './_env.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseWindow, overlaps } from '../../src/modules/ai-agent/ai-agent.availability.js';
+import { parseWindow, overlaps, _useClock } from '../../src/modules/ai-agent/ai-agent.availability.js';
 import { buildTools, toolsForUser, extractAttachments } from '../../src/modules/ai-agent/ai-agent.tools.js';
 import { upcomingDaysText } from '../../src/modules/ai-agent/ai-agent.service.js';
 import { chatSchema } from '../../src/modules/ai-agent/ai-agent.controller.js';
@@ -34,6 +34,11 @@ const makeDb = (tables) => {
   };
   return db;
 };
+
+// «Ahora» fijo: lo disponible depende de la hora actual y estas pruebas usan fechas concretas (jueves 2026-11-26, 10:00 en Bolivia)
+const NOW = Date.parse('2026-11-26T14:00:00Z');
+test.beforeEach(() => _useClock(() => NOW));
+test.after(() => _useClock());
 
 const ADMIN = { id: 'a', role: 'admin' };
 const CLIENT = { id: 'c', role: 'client' };
@@ -228,4 +233,28 @@ test('el vehículo no repite la marca cuando el modelo ya la incluye ("Volvo Vol
   assert.equal(await out('Volvo', 'Volvo FH16'), 'ABC-123 Volvo FH16');
   assert.equal(await out('Mercedes', 'Sprinter'), 'ABC-123 Mercedes Sprinter');
   assert.equal(await out(null, 'Sprinter'), 'ABC-123 Sprinter');
+});
+
+// ============================================================ lo disponible es lo que AÚN no salió
+test('un viaje planeado cuya hora ya pasó no se ofrece como disponible: la ventana empieza «ahora»', async () => {
+  // «hoy» entero (jueves 26): la consulta no puede empezar antes de ahora (14:00Z) aunque el día empiece a las 04:00Z
+  const db = makeDb({ transport_routes: { data: [] }, vehicles: { data: [] }, packages: { data: [] } });
+  await run(ADMIN, 'find_available_trips', { date: '2026-11-26' }, db);
+  const q = db.calls.find((c) => c.table === 'transport_routes');
+  assert.deepEqual(q.gte[0], ['departure_time', '2026-11-26T14:00:00.000Z']);
+  assert.deepEqual(q.lte[0], ['departure_time', '2026-11-27T03:59:00.000Z']);
+});
+
+test('una ventana en el futuro no se altera', async () => {
+  const db = makeDb({ transport_routes: { data: [] }, vehicles: { data: [] }, packages: { data: [] } });
+  await run(ADMIN, 'find_available_trips', { date: '2026-11-27', from_time: '15:00', to_time: '17:00' }, db);
+  assert.deepEqual(db.calls.find((c) => c.table === 'transport_routes').gte[0], ['departure_time', '2026-11-27T19:00:00.000Z']);
+});
+
+test('una ventana que ya terminó no devuelve nada del pasado: las alternativas empiezan ahora', async () => {
+  const db = makeDb({ transport_routes: { data: [] }, vehicles: { data: [] }, packages: { data: [] } });
+  await run(ADMIN, 'find_available_trips', { date: '2026-11-25', from_time: '08:00', to_time: '10:00' }, db); // ayer
+  const calls = db.calls.filter((c) => c.table === 'transport_routes');
+  assert.deepEqual(calls[0].gte[0], ['departure_time', '2026-11-26T14:00:00.000Z']);
+  assert.deepEqual(calls[1].gte[0], ['departure_time', '2026-11-26T14:00:00.000Z']);
 });
