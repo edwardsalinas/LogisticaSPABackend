@@ -13,7 +13,7 @@ router.get('/pool', requireRole(['admin']), AiAgentController.handlePoolStatus);
 router.get('/usage', requireRole(['admin']), AiAgentController.handleUsage);
 
 /** Avisos proactivos de Logi: excepciones reales de la operación (solo administradores y operadores; sin modelo de IA). */
-router.get('/alerts', requireRole(['admin', 'logistics_operator']), AiAgentController.handleAlerts);
+router.get('/alerts', AiAgentController.handleAlerts); // cada rol recibe los suyos: el servidor decide qué ve cada uno
 
 /** Eventos de uso de Logi (avisos aceptados, acciones hechas…) para las métricas del panel de uso. Solo cuentan eventos, no contenido. */
 router.post('/logi-events', AiAgentController.handleLogiEvent);

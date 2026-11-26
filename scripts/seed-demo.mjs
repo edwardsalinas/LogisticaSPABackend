@@ -51,7 +51,7 @@ if (existingRoutes.length || existingPkgs.length) {
 // ---- personas y vehículos reales ya existentes (no se crea ninguno)
 const pick = async (table, filter) => (await filter(db.from(table).select('id'))).data?.[0]?.id ?? null;
 const driverId = await pick('profiles', (q) => q.eq('role', 'driver'));
-const clientId = await pick('profiles', (q) => q.eq('role', 'client'));
+const clientId = await pick('profiles', (q) => q.eq('role', 'client').order('full_name')); // orden fijo: siempre el mismo cliente (María López en estos datos)
 const vehicles = must('vehículos', await db.from('vehicles').select('id, plate, capacity_kg').order('capacity_kg', { ascending: false }));
 const big = vehicles.find((v) => v.capacity_kg >= 5000) ?? vehicles[0];
 const small = vehicles.find((v) => v.id !== big.id) ?? big;
@@ -63,22 +63,25 @@ const inHours = (h) => new Date(Math.round((Date.now() + h * HOUR) / HALF) * HAL
 
 const CITY = {
   'La Paz': [-16.5, -68.1193], Oruro: [-17.9833, -67.15], Cochabamba: [-17.3895, -66.1568],
-  'Santa Cruz': [-17.7833, -63.1821], 'Potosí': [-19.5836, -65.7531],
+  'Santa Cruz': [-17.7833, -63.1821], 'Potosí': [-19.5836, -65.7531], Sucre: [-19.0333, -65.2627],
 };
-const routeRow = (code, origin, destination, departure, driver, vehicle) => ({
-  route_code: code, origin, destination, departure_time: departure, status: 'planeada', driver_id: driver, vehicle_id: vehicle,
+const routeRow = (code, origin, destination, departure, driver, vehicle, status = 'planeada') => ({
+  route_code: code, origin, destination, departure_time: departure, status, driver_id: driver, vehicle_id: vehicle,
   origin_lat: CITY[origin][0], origin_lng: CITY[origin][1], dest_lat: CITY[destination][0], dest_lng: CITY[destination][1],
 });
 
-const [rOk, rNoDriver, rLate] = must('viajes', await db.from('transport_routes').insert([
+const [rOk, rNoDriver, rLate, rMoving, rSoon] = must('viajes', await db.from('transport_routes').insert([
   routeRow(`${MARK}-1`, 'La Paz', 'Oruro', inHours(10), driverId, big.id),
   routeRow(`${MARK}-2`, 'Cochabamba', 'Santa Cruz', inHours(20), null, small.id),
   routeRow(`${MARK}-3`, 'Oruro', 'Potosí', new Date(Date.now() - 2 * HOUR).toISOString(), driverId, big.id),
+  // para los avisos del cliente y del conductor: un viaje en tránsito (con una entrega hecha y otra pendiente) y uno que sale en ~45 min
+  routeRow(`${MARK}-4`, 'Potosí', 'Sucre', new Date(Date.now() - 3 * HOUR).toISOString(), driverId, small.id, 'en_transito'),
+  routeRow(`${MARK}-5`, 'Sucre', 'Potosí', new Date(Date.now() + 45 * 60 * 1000).toISOString(), driverId, big.id),
 ]).select('id'));
 
 const code = () => `TRK-${Date.now()}-${randomBytes(4).toString('hex').toUpperCase()}`;
-const pkg = (origen, destino, peso, who, phone, what, route = null) => ({
-  tracking_code: code(), origen, destino, peso, description: `${MARK} ${what}`, status: route ? 'asignado' : 'pendiente', route_id: route,
+const pkg = (origen, destino, peso, who, phone, what, route = null, status = route ? 'asignado' : 'pendiente', extra = {}) => ({
+  tracking_code: code(), origen, destino, peso, description: `${MARK} ${what}`, status, route_id: route, ...extra,
   sender_id: clientId, sender_name: 'María López', sender_phone: '70123456', recipient_name: who, recipient_phone: phone,
 });
 const rows = [
@@ -88,14 +91,18 @@ const rows = [
   pkg('Cochabamba', 'Santa Cruz', 9, 'Marco Rojas', '71234504', 'Medicamentos'),
   pkg('Oruro', 'Potosí', 15, 'Elena Choque', '71234505', 'Alimentos no perecederos', rLate.id),
   pkg('Oruro', 'Potosí', 6, 'Jorge Vargas', '71234506', 'Material escolar', rLate.id),
+  pkg('Potosí', 'Sucre', 3, 'Ana Rojas', '71234507', 'Libros', rMoving.id, 'entregado', { delivered_at: new Date(Date.now() - 40 * 60 * 1000).toISOString() }),
+  pkg('Potosí', 'Sucre', 8, 'Pablo Núñez', '71234508', 'Herramientas', rMoving.id, 'en_transito'),
+  pkg('Sucre', 'Potosí', 5, 'Marta Vega', '71234509', 'Artesanías', rSoon.id),
 ];
 const created = must('paquetes', await db.from('packages').insert(rows).select('id, origen, status'));
+const LOG_STATUS = { asignado: 'Asignado', pendiente: 'Pendiente', en_transito: 'En tránsito', entregado: 'Entregado' };
 
 const logs = created.map((p) => ({
-  package_id: p.id, lat: CITY[p.origen][0], lng: CITY[p.origen][1], status: p.status === 'asignado' ? 'Asignado' : 'Pendiente',
-  observations: 'Datos de demostración', timestamp: new Date().toISOString(),
+  package_id: p.id, lat: CITY[p.origen][0], lng: CITY[p.origen][1], status: LOG_STATUS[p.status] ?? 'Pendiente',
+  observations: 'Datos de demostración', timestamp: new Date(Date.now() - (p.status === 'en_transito' ? 60 : p.status === 'entregado' ? 40 : 0) * 60 * 1000).toISOString(),
 }));
 must('historial', await db.from('tracking_logs').insert(logs));
 
-console.log(`\nlisto: 3 viajes (${rOk.id.slice(0, 8)}…, ${rNoDriver.id.slice(0, 8)}…, ${rLate.id.slice(0, 8)}…) y ${created.length} paquetes de demo.`);
+console.log(`\nlisto: 5 viajes (${[rOk, rNoDriver, rLate, rMoving, rSoon].map((r) => `${r.id.slice(0, 8)}…`).join(', ')}) y ${created.length} paquetes de demo.`);
 console.log('Para borrarlos: node --env-file=.env scripts/seed-demo.mjs --remove');
