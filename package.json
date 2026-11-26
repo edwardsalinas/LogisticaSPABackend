@@ -38,6 +38,7 @@
     "langchain": "^1.2.35",
     "swagger-jsdoc": "^6.2.8",
     "swagger-ui-express": "^5.0.1",
+    "web-push": "^4.0.0",
     "zod": "^4.3.6"
   }
 }

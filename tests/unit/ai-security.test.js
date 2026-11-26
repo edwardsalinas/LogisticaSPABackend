@@ -37,6 +37,9 @@ test('un error pensado para el usuario (4xx) sí se muestra; un 5xx o desconocid
   assert.deepEqual(publicError(Object.assign(new Error('detalle interno'), { status: 503 })), { status: 500, message: 'Error interno del servidor.' });
   assert.deepEqual(publicError(new Error('detalle interno')), { status: 500, message: 'Error interno del servidor.' });
   assert.deepEqual(publicError(null), { status: 500, message: 'Error interno del servidor.' });
+  // un 503 deliberado (marcado expose) se muestra; uno accidental no
+  assert.deepEqual(publicError(Object.assign(new Error('No disponible aquí'), { status: 503, expose: true })), { status: 503, message: 'No disponible aquí' });
+  assert.deepEqual(publicError(Object.assign(new Error('detalle interno'), { status: 503, expose: 'sí' })), { status: 500, message: 'Error interno del servidor.' });
 });
 
 // ============================================================ cabeceras
