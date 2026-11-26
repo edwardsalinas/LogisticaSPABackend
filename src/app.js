@@ -10,6 +10,7 @@ import checkpointsRoutes from './modules/logistics/checkpoints.routes.js';
 import statisticsRoutes from './modules/statistics/statistics.routes.js';
 import { apiLimiter } from './shared/middlewares/rateLimit.js';
 import { securityHeaders } from './shared/middlewares/securityHeaders.js';
+import notificationsRoutes from './modules/notifications/notifications.routes.js';
 
 const app = express();
 
@@ -61,6 +62,7 @@ app.use('/api/tracking', trackingRoutes);
 app.use('/api/iam', iamRoutes);
 app.use('/api/ai-agent', aiAgentRoutes);
 app.use('/api/statistics', statisticsRoutes);
+app.use('/api/notifications', notificationsRoutes);
 
 // Rutas inexistentes y errores no capturados (JSON roto, cuerpo demasiado grande…): siempre JSON genérico. El manejador por defecto de
 // Express devuelve una página con la TRAZA completa (rutas del servidor, versiones), útil para quien ataca.

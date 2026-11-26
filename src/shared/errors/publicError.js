@@ -17,6 +17,8 @@ const PG_USER_ERRORS = {
 export const publicError = (error, fallbackStatus = 500) => {
   const explicit = Number(error?.status ?? error?.statusCode);
   if (Number.isInteger(explicit) && explicit >= 400 && explicit < 500) return { status: explicit, message: String(error.message || 'Solicitud no válida.') };
+  // «No disponible» (503) es un mensaje deliberado nuestro, no un fallo: solo se muestra si quien lo lanzó lo marcó `expose` (un 5xx accidental sigue siendo genérico).
+  if (explicit === 503 && error.expose === true) return { status: 503, message: String(error.message) };
   const pg = PG_USER_ERRORS[String(error?.code ?? '')];
   if (pg) return pg;
   console.error('[API Error]:', error?.message ?? error);

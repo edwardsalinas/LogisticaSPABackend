@@ -50,6 +50,14 @@ export const chatLimiter = buildLimiter({
   message: 'Demasiados mensajes al asistente. Espera un minuto.',
 });
 
+/** Activar o desactivar los avisos con la pestaña cerrada: pocas veces al día por persona (evita llenar la tabla de suscripciones). */
+export const pushLimiter = buildLimiter({
+  windowMs: 60 * 60 * 1000,
+  limit: Number(process.env.RATE_LIMIT_PUSH_MAX) || 30,
+  keyGenerator: byUser,
+  message: 'Demasiados cambios en los avisos. Inténtalo más tarde.',
+});
+
 /** Eventos de uso de Logi (métricas): una persona no necesita enviar más de unos pocos por minuto; evita llenar la tabla de auditoría. */
 export const logiEventsLimiter = buildLimiter({
   windowMs: 60 * 1000,
