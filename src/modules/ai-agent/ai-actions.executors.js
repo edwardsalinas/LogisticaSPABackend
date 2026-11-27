@@ -4,6 +4,8 @@ import * as LogisticsService from '../logistics/logistics.service.js';
 import { PACKAGE_STATUS } from '../logistics/logistics.schema.js';
 import { checkRouteForPackage } from './ai-agent.actions.js';
 import { applyAssignDriver } from './ai-agent.fleet-actions.js';
+import { applyCancelTrip, applyCreateVehicle, applyRescheduleTrip, applyUpdateVehicle } from './ai-agent.manage-actions.js';
+import { createVehicle } from '../fleet/fleet.service.js';
 
 /**
  * Qué hace cada acción al confirmarse. Reutiliza los MISMOS servicios que la API REST y la interfaz clásica,
@@ -114,6 +116,22 @@ const rawExecutors = {
   async create_trip(p, _user) {
     const route = await LogisticsService.createRoute(p.route);
     return { message: 'Viaje creado.', data: { route_id: route?.id ?? route?.route?.id ?? null } };
+  },
+
+  async reschedule_trip(p, _user) {
+    return applyRescheduleTrip(supabase, p);
+  },
+
+  async cancel_trip(p, _user) {
+    return applyCancelTrip(supabase, p, (id) => LogisticsService.deleteRoute(id));
+  },
+
+  async create_vehicle(p, _user) {
+    return applyCreateVehicle(supabase, p, createVehicle);
+  },
+
+  async update_vehicle(p, _user) {
+    return applyUpdateVehicle(supabase, p);
   },
 };
 

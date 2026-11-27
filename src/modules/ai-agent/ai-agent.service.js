@@ -130,7 +130,7 @@ const BOLIVIA_OFFSET_MS = -4 * 60 * 60 * 1000;
 export const upcomingDaysText = (now = Date.now(), days = 10) =>
   Array.from({ length: days }, (_, i) => {
     const d = new Date(now + BOLIVIA_OFFSET_MS + i * 24 * 60 * 60 * 1000);
-    const label = i === 0 ? 'hoy' : i === 1 ? 'mañana' : null;
+    const label = i === 0 ? 'hoy' : i === 1 ? 'mañana' : i === 2 ? 'pasado mañana' : null;
     return `${WEEKDAYS[d.getUTCDay()]} ${d.toISOString().slice(0, 10)}${label ? ` (${label})` : ''}`;
   }).join('; ');
 
@@ -139,6 +139,10 @@ MODO VOZ: el usuario te está hablando y tu respuesta se leerá en voz alta. Res
 
 // Guía de uso de cada herramienta: solo se incluye la de las herramientas que realmente se envían al modelo
 const TOOL_HINTS = {
+  propose_reschedule_trip: 'Para mover un viaje planeado a otra fecha u hora usa propose_reschedule_trip (el viaje lo eliges con find_available_trips o list_routes).',
+  propose_cancel_trip: 'Para cancelar un viaje planeado usa propose_cancel_trip, tras confirmar de cuál habla; sus paquetes vuelven a pendiente.',
+  propose_create_vehicle: 'Para registrar un vehículo usa propose_create_vehicle (placa, modelo, tipo y capacidad); pregunta lo que falte.',
+  propose_update_vehicle: 'Para cambiar el estado o la capacidad de un vehículo, o darlo de baja (retirado), usa propose_update_vehicle. Los vehículos no se borran.',
   show_on_screen: 'Para ENSEÑAR algo («muéstrame», «llévame a», «filtra», «ábrelo») usa show_on_screen: abre la pantalla, cambia de pestaña o filtra su tabla; no cambia datos. Tras consultar algo que el usuario quiere VER (un paquete, los viajes de una ciudad), llámala también para dejárselo en pantalla, y dile en una frase qué dejaste a la vista.',
   get_package_tracking: 'Para ubicar un paquete usa get_package_tracking: di en palabras dónde está (último punto, checkpoint cercano, km al destino), su estado, quién lo lleva y la hora estimada; si la ubicación es de hace horas, indícalo.',
   find_packages_by_person: 'Con un nombre y sin código usa find_packages_by_person; si hay varias coincidencias, pide que confirme cuál.',

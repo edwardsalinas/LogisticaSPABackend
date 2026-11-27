@@ -79,7 +79,7 @@ test('overlaps: solapamiento de intervalos', () => {
 test('calendario del prompt: los próximos días con su fecha exacta (hora de Bolivia)', () => {
   // 2026-11-21 (sábado) 22:00 en Bolivia = 2026-11-22T02:00Z
   const text = upcomingDaysText(Date.parse('2026-11-22T02:00:00Z'), 8);
-  assert.match(text, /^sábado 2026-11-21 \(hoy\); domingo 2026-11-22 \(mañana\); lunes 2026-11-23;/);
+  assert.match(text, /^sábado 2026-11-21 \(hoy\); domingo 2026-11-22 \(mañana\); lunes 2026-11-23 \(pasado mañana\);/);
   assert.match(text, /viernes 2026-11-27/);
   assert.equal(text.split(';').length, 8);
 });

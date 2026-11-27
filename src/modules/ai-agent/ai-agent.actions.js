@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { createProposal } from './ai-actions.service.js';
 import { proposalResult } from './ai-proposal-result.js';
 import { prepareCancelProposal, prepareDriverProposal, prepareTripProposal } from './ai-agent.fleet-actions.js';
+import { prepareCancelTripProposal, prepareCreateVehicleProposal, prepareRescheduleProposal, prepareUpdateVehicleProposal } from './ai-agent.manage-actions.js';
 import { PACKAGE_STATUS, packageSchema } from '../logistics/logistics.schema.js';
 
 /**
@@ -445,5 +446,53 @@ export const buildActionTools = (user, db) => {
     }
   );
 
-  return [proposeEvent, proposeDeliver, proposeCreate, proposeAssign, proposeCancel, proposeDriver, proposeTrip];
+  // ------------------------------------------------------------------ reprogramar o cancelar un viaje; crear o cambiar un vehículo
+  const proposeReschedule = tool(
+    async (args) => prepareRescheduleProposal(user, db, args),
+    {
+      name: 'propose_reschedule_trip',
+      description: 'PROPONE cambiar la fecha y hora de salida de un viaje PLANEADO. Para elegir el viaje usa antes find_available_trips o list_routes y pasa su campo ref. Si falta la nueva fecha u hora, pregúntalas. Solo propone: el usuario confirma.',
+      schema: z.object({
+        route_ref: z.string().describe('Viaje: el campo ref devuelto por find_available_trips o list_routes'),
+        date: z.string().describe('Nueva fecha de salida AAAA-MM-DD (hora de Bolivia)'),
+        time: z.string().describe('Nueva hora de salida HH:mm (24 horas, hora de Bolivia)'),
+      }),
+    }
+  );
+  const proposeCancelTrip = tool(
+    async (args) => prepareCancelTripProposal(user, db, args),
+    {
+      name: 'propose_cancel_trip',
+      description: 'PROPONE cancelar (eliminar) un viaje PLANEADO; sus paquetes vuelven a pendiente. Para elegir el viaje usa antes find_available_trips o list_routes. Es irreversible, así que confirma con el usuario de qué viaje habla antes de llamarla. Solo propone: el usuario confirma.',
+      schema: z.object({ route_ref: z.string().describe('Viaje: el campo ref devuelto por find_available_trips o list_routes') }),
+    }
+  );
+  const proposeCreateVehicle = tool(
+    async (args) => prepareCreateVehicleProposal(user, db, args),
+    {
+      name: 'propose_create_vehicle',
+      description: 'PROPONE registrar un vehículo nuevo (solo administradores). Necesita placa, modelo, tipo y capacidad en kg; si falta alguno, pregúntalo. Solo propone: el usuario confirma.',
+      schema: z.object({
+        plate: z.string().describe('Placa del vehículo (6 a 10 caracteres)'),
+        brand: z.string().optional().describe('Marca'),
+        model: z.string().describe('Modelo'),
+        type: z.string().describe('Tipo de vehículo (camión, furgoneta…)'),
+        capacity_kg: z.number().describe('Capacidad de carga en kilos'),
+      }),
+    }
+  );
+  const proposeUpdateVehicle = tool(
+    async (args) => prepareUpdateVehicleProposal(user, db, args),
+    {
+      name: 'propose_update_vehicle',
+      description: 'PROPONE cambiar el estado de un vehículo (disponible, en_servicio, mantenimiento o retirado) o su capacidad en kg (solo administradores). «Dar de baja» o «sacar de circulación» es estado retirado: los vehículos no se borran. Solo propone: el usuario confirma.',
+      schema: z.object({
+        plate: z.string().describe('Placa del vehículo'),
+        status: z.string().optional().describe('Nuevo estado: disponible, en_servicio, mantenimiento o retirado'),
+        capacity_kg: z.number().optional().describe('Nueva capacidad en kilos'),
+      }),
+    }
+  );
+
+  return [proposeEvent, proposeDeliver, proposeCreate, proposeAssign, proposeCancel, proposeDriver, proposeTrip, proposeReschedule, proposeCancelTrip, proposeCreateVehicle, proposeUpdateVehicle];
 };

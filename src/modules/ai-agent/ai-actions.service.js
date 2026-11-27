@@ -26,6 +26,10 @@ export const ACTION_ROLES = {
   cancel_package: OPS,
   assign_driver: OPS,
   create_trip: OPS,
+  reschedule_trip: OPS,
+  cancel_trip: OPS,
+  create_vehicle: ['admin'],
+  update_vehicle: ['admin'],
 };
 
 const store = new Map();
