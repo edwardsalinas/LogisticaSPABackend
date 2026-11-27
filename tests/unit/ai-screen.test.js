@@ -28,6 +28,7 @@ test('show_on_screen: ignora lo inventado (pantalla, pestaña, buscador)', () =>
   assert.match(buildScreenCommand(admin, { page: 'admin-secreto' }), /no existe/);
   assert.match(buildScreenCommand(admin, { page: 'packages', tab: 'borrados' }), /no tiene la pestaña/);
   assert.match(buildScreenCommand(admin, { page: 'analytics', search: 'x' }), /no tiene buscador/);
+  assert.equal(buildScreenCommand(admin, { page: 'analytics', search: '', from: '2026-11-01', to: '2026-11-26' }).kind, 'ui_command'); // un filtro vacío no estorba
   assert.match(buildScreenCommand(admin, {}), /no existe/);
 });
 
@@ -62,4 +63,27 @@ test('todos los roles tienen la herramienta, y se elige cuando se pide enseñar 
 
 test('las pantallas del servidor y del navegador coinciden en roles', () => {
   assert.deepEqual(Object.keys(SCREENS).sort(), ['analytics', 'dashboard', 'driver', 'fleet', 'packages', 'routes', 'tracking']);
+});
+
+test('filtros finos: fecha de Paquetes, origen/destino/tipo de Viajes y rango de Reportes', () => {
+  assert.deepEqual(buildScreenCommand(admin, { page: 'packages', date: '2026-11-30' }).fields, { date: '2026-11-30' });
+  assert.deepEqual(buildScreenCommand(op, { page: 'routes', origin: 'La Paz', destination: 'Oruro', trip_type: 'schedule' }).fields, { origin: 'La Paz', destination: 'Oruro', type: 'schedule' });
+  assert.deepEqual(buildScreenCommand(admin, { page: 'analytics', from: '2026-11-01', to: '2026-11-26' }).fields, { range: { from: '2026-11-01', to: '2026-11-26' } });
+  assert.equal(buildScreenCommand(admin, { page: 'routes', trip_type: '' }).fields.type, ''); // vacío quita el filtro
+});
+
+test('filtros finos: rechaza fechas imposibles, rangos al revés o demasiado largos, y filtros que esa pantalla no tiene', () => {
+  assert.match(buildScreenCommand(admin, { page: 'packages', date: '2026-02-30' }), /AAAA-MM-DD/);
+  assert.match(buildScreenCommand(admin, { page: 'packages', date: 'mañana' }), /AAAA-MM-DD/);
+  assert.match(buildScreenCommand(admin, { page: 'analytics', from: '2026-11-26', to: '2026-11-01' }), /no puede ser posterior/);
+  assert.match(buildScreenCommand(admin, { page: 'analytics', from: '2026-01-01', to: '2026-11-26' }), /92 días/);
+  assert.match(buildScreenCommand(admin, { page: 'analytics', from: '2026-11-01' }), /from y to/);
+  assert.match(buildScreenCommand(admin, { page: 'fleet', date: '2026-11-30' }), /no tiene el filtro/);
+  assert.match(buildScreenCommand(admin, { page: 'packages', origin: 'Oruro' }), /no tiene el filtro/);
+  assert.match(buildScreenCommand(op, { page: 'routes', trip_type: 'raro' }), /single|schedule/);
+  assert.match(buildScreenCommand(op, { page: 'analytics', from: '2026-11-01', to: '2026-11-26' }), /No tienes Reportes/); // y el rol sigue mandando
+});
+
+test('filtros finos: el origen se limpia como cualquier texto de filtro', () => {
+  assert.equal(buildScreenCommand(op, { page: 'routes', origin: "Oruro'; --%" }).fields.origin, "Oruro' --");
 });
