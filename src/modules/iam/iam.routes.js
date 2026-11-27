@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import { z } from 'zod';
 import env from '../../shared/config/env.js';
 import { requireAuth } from './iam.middleware.js';
+import * as IamService from './iam.service.js';
 import { requireCaptcha } from '../../shared/middlewares/captcha.js';
 import { loginLimiter } from '../../shared/middlewares/rateLimit.js';
 import { ACCESS_COOKIE, REFRESH_COOKIE, parseCookies, setAuthCookies, clearAuthCookies } from './iam.cookies.js';
@@ -71,9 +72,11 @@ router.post('/login', loginLimiter, requireCaptcha, async (req, res) => {
     return res.status(400).json({ success: false, errors: parsed.error.flatten().fieldErrors });
   }
 
-  const { data, error } = await createAuthClient().auth.signInWithPassword(parsed.data);
-
-  if (error) return res.status(401).json({ success: false, message: error.message });
+  const out = await IamService.signInWith(createAuthClient(), parsed.data);
+  // un corte del servicio de autenticación no son credenciales inválidas: se avisa con 503 para que se reintente
+  if (out.transient) return res.set('Retry-After', '2').status(503).json({ success: false, message: 'El servicio de autenticación no está disponible por un momento. Intenta de nuevo.' });
+  if (out.error) return res.status(401).json({ success: false, message: out.error.message });
+  const { data } = out;
 
   setAuthCookies(res, data.session);
   return res.status(200).json({
@@ -92,7 +95,9 @@ router.post('/login', loginLimiter, requireCaptcha, async (req, res) => {
  *       200:
  *         description: Sesión renovada (cookies actualizadas)
  *       401:
- *         description: Refresh token ausente o inválido
+ *         description: Refresh token ausente o inválido (se cierra la sesión)
+ *       503:
+ *         description: El servicio de autenticación no respondió; la sesión se conserva y se puede reintentar
  */
 router.post('/refresh', async (req, res) => {
   const refreshToken = parseCookies(req.headers.cookie)[REFRESH_COOKIE];
@@ -102,11 +107,14 @@ router.post('/refresh', async (req, res) => {
     return res.status(403).json({ success: false, message: 'Forbidden: missing CSRF protection header' });
   }
 
-  const { data, error } = await createAuthClient().auth.refreshSession({ refresh_token: refreshToken });
-  if (error || !data?.session) {
+  const out = await IamService.refreshWith(createAuthClient(), refreshToken);
+  // un corte del servicio NO cierra la sesión: se conservan las cookies y se pide reintentar (el refresh token sigue siendo bueno)
+  if (out.transient) return res.set('Retry-After', '2').status(503).json({ success: false, message: 'El servicio de autenticación no está disponible por un momento. Intenta de nuevo.' });
+  if (out.error) {
     clearAuthCookies(res);
-    return res.status(401).json({ success: false, message: error?.message || 'Sesión expirada' });
+    return res.status(401).json({ success: false, message: out.error.message || 'Sesión expirada' });
   }
+  const { data } = out;
 
   setAuthCookies(res, data.session);
   return res.json({ success: true, data: { user: data.user, expires_at: data.session.expires_at } });

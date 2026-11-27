@@ -3,6 +3,10 @@ import { ACCESS_COOKIE, parseCookies } from './iam.cookies.js';
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
+// el verificador de tokens se puede cambiar en pruebas (un módulo ES no se puede «parchear» desde fuera)
+let verify = (token) => IamService.verifyToken(token);
+export const _setTokenVerifier = (fn) => { verify = fn ?? ((token) => IamService.verifyToken(token)); };
+
 let warnedLegacyRole = false;
 
 /**
@@ -58,7 +62,7 @@ export const requireAuth = async (req, res, next) => {
       return res.status(403).json({ message: 'Forbidden: missing CSRF protection header' });
     }
 
-    const user = await IamService.verifyToken(token);
+    const user = await verify(token);
 
     if (!user) {
       return res.status(401).json({ message: 'Invalid or expired token' });
@@ -68,7 +72,14 @@ export const requireAuth = async (req, res, next) => {
     req.user.role = resolveRole(user);
     next();
   } catch (error) {
-    console.error('[IAM Middleware] Authentication error:', error.message || error);
+    // Un corte del servicio de autenticación (red, proveedor caído o saturado) NO es una sesión inválida: se responde 503 para que el
+    // navegador reintente en vez de cerrar la sesión. Solo un token realmente inválido o vencido es 401.
+    if (IamService.isTransientAuthError(error)) {
+      console.error('[IAM Middleware] Servicio de autenticación no disponible:', error.name || 'Error', error.cause?.code || error.status || '');
+      res.set?.('Retry-After', '2');
+      return res.status(503).json({ message: 'Authentication service temporarily unavailable' });
+    }
+    console.error('[IAM Middleware] Authentication error:', error?.name || 'Error', error?.status || '');
     // No se devuelve error.message: puede exponer detalles internos del proveedor de autenticación
     res.status(401).json({ message: 'Invalid or expired token' });
   }
