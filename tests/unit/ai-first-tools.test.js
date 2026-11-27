@@ -181,7 +181,7 @@ test('get_fleet_status: solo administradores', async () => {
 // ------------------------------------------------------------------ herramientas visibles por rol y tarjetas
 test('cada rol solo recibe las herramientas que puede usar', () => {
   const names = (role) => toolsForUser({ id: 'x', role }, makeDb({}), stats).map((t) => t.name).sort();
-  assert.deepEqual(names('client'), ['find_available_trips', 'find_packages_by_person', 'get_package_tracking', 'list_my_packages']);
+  assert.deepEqual(names('client'), ['find_available_trips', 'find_packages_by_person', 'get_package_tracking', 'list_my_packages', 'show_on_screen']);
   assert.ok(names('driver').includes('get_my_deliveries'));
   assert.ok(!names('driver').includes('find_packages_by_person'));
   assert.ok(names('admin').includes('get_fleet_status'));

@@ -139,6 +139,7 @@ MODO VOZ: el usuario te está hablando y tu respuesta se leerá en voz alta. Res
 
 // Guía de uso de cada herramienta: solo se incluye la de las herramientas que realmente se envían al modelo
 const TOOL_HINTS = {
+  show_on_screen: 'Para ENSEÑAR algo («muéstrame», «llévame a», «filtra», «ábrelo») usa show_on_screen: abre la pantalla, cambia de pestaña o filtra su tabla; no cambia datos. Tras consultar algo que el usuario quiere VER (un paquete, los viajes de una ciudad), llámala también para dejárselo en pantalla, y dile en una frase qué dejaste a la vista.',
   get_package_tracking: 'Para ubicar un paquete usa get_package_tracking: di en palabras dónde está (último punto, checkpoint cercano, km al destino), su estado, quién lo lleva y la hora estimada; si la ubicación es de hace horas, indícalo.',
   find_packages_by_person: 'Con un nombre y sin código usa find_packages_by_person; si hay varias coincidencias, pide que confirme cuál.',
   list_my_packages: 'Sin código ni nombre, ofrece listar sus paquetes con list_my_packages.',
