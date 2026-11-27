@@ -148,7 +148,7 @@ export class LLMPool {
    * @param {object[]} entries salida de resolvePool(...).entries
    * @param {{ build: (entry) => object, now?: () => number, strategy?: 'balanced'|'speed', timeoutMs?: number, maxAttempts?: number }} options
    */
-  constructor(entries, { build, now = Date.now, strategy = 'balanced', timeoutMs = 30000, maxAttempts = 3, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) } = {}) {
+  constructor(entries, { build, now = Date.now, strategy = 'balanced', timeoutMs = 30000, maxAttempts = 5, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) } = {}) {
     this.sleep = sleep;
     if (typeof build !== 'function') throw new Error('LLMPool necesita una función build(entry) que cree el modelo');
     this.build = build;

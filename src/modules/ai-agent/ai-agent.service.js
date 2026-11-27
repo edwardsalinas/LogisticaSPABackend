@@ -2,7 +2,8 @@ import { ChatOpenAI } from "@langchain/openai";
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { createReactAgent } from "@langchain/langgraph/prebuilt";
 import { toolsForUser, extractAttachments } from './ai-agent.tools.js';
-import { LLMPool, resolvePool } from './llm.pool.js';
+import { LLMPool, resolvePool, classifyError } from './llm.pool.js';
+import { cancelProposal } from './ai-actions.service.js';
 import { selectToolNames, fastPlanFor } from './ai-agent.intents.js';
 import { withToolCache } from './ai-agent.cache.js';
 import { extractFromImage } from './ai-agent.documents.js';
@@ -231,12 +232,17 @@ const prepareTurn = (message, { user, history = [], voice = false, pageContext }
   const wanted = selectToolNames(allTools.map((t) => t.name), message, history);
   const tools = withToolCache(allTools.filter((t) => wanted.includes(t.name)), chatUser);
 
-  // Si el modelo ya dejó una propuesta de acción preparada, un reintento en otro modelo podría duplicarla
-  const state = { proposed: false };
+  // Si el modelo ya dejó una propuesta de acción preparada, un reintento en otro modelo podría duplicarla: se anota cuál (ver makeRetryGuard)
+  const state = { proposed: false, ids: [], user: chatUser };
   for (const t of tools) {
     if (String(t.name).startsWith('propose_') && typeof t.func === 'function') {
       const original = t.func;
-      t.func = async (...args) => { state.proposed = true; return original.apply(t, args); };
+      t.func = async (...args) => {
+        state.proposed = true;
+        const out = await original.apply(t, args);
+        try { const id = JSON.parse(out)?.action?.id; if (id) state.ids.push(id); } catch { /* la herramienta devolvió un rechazo en texto: no hay propuesta */ }
+        return out;
+      };
     }
   }
 
@@ -303,7 +309,24 @@ const runFastPath = async (message, context, turn, { emit } = {}) => {
   };
 };
 
-const poolOptions = (state) => ({ canRetry: () => !state.proposed, tokensOf: tokensUsed, callsOf: (r) => traceOf(r).steps });
+/**
+ * ¿Se puede reintentar la consulta en otro modelo? Sin propuestas preparadas, siempre. Con una propuesta ya creada, solo si el fallo fue un
+ * LÍMITE DE USO (429) del modelo —típico de los planes gratuitos, que topan por tokens por minuto justo al redactar la respuesta—, y entonces
+ * primero se DESCARTAN las propuestas del intento fallido: el usuario solo verá las del intento que salga bien, y no se acumulan tarjetas
+ * fantasma ni se desplazan las que ya tenía pendientes. Cualquier otro fallo tras una propuesta no se reintenta (como antes).
+ */
+export const makeRetryGuard = (state, cancel = cancelProposal) => (error) => {
+  if (!state.proposed) return true;
+  if (classifyError(error) !== 'rateLimited') return false;
+  for (const id of state.ids) {
+    try { cancel(id, state.user); } catch { /* ya no estaba pendiente (se confirmó o venció): no hay nada que descartar */ }
+  }
+  state.ids = [];
+  state.proposed = false;
+  return true;
+};
+
+const poolOptions = (state) => ({ canRetry: makeRetryGuard(state), tokensOf: tokensUsed, callsOf: (r) => traceOf(r).steps });
 
 export const processChatMessage = async (message, context = {}) => {
   const turn = prepareTurn(message, context);

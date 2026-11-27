@@ -369,3 +369,29 @@ test('si canRetry lo impide (la consulta ya tuvo efectos), no se repite aunque e
   assert.equal(calls, 1);
   assert.deepEqual(slept, []);
 });
+
+// ---------------------------------------------------------------- intentos antes de rendirse
+test('si los tres primeros modelos están limitados, la consulta se atiende con el cuarto (antes se rendía a los tres intentos)', async () => {
+  const c = clock();
+  const pool = make([['a'], ['b'], ['c'], ['d'], ['e']], { now: c.now, sleep: async () => {} });
+  const calls = [];
+  const { result, member, attempts } = await pool.run(async (_m, mm) => {
+    calls.push(mm.id);
+    if (['a', 'b', 'c'].includes(mm.id)) throw err(429, 'rate limit');
+    return `respuesta de ${mm.id}`;
+  });
+  assert.equal(result, 'respuesta de d');
+  assert.equal(member.id, 'd');
+  assert.equal(attempts, 4);
+  assert.deepEqual(calls, ['a', 'b', 'c', 'd']);
+});
+
+test('el límite de intentos sigue acotado: con todos los modelos fallando no se prueba más de 5 por ronda', async () => {
+  const c = clock();
+  const pool = make([['a'], ['b'], ['c'], ['d'], ['e'], ['f'], ['g']], { now: c.now, sleep: async () => {} });
+  const calls = [];
+  await assert.rejects(pool.run(async (_m, mm) => { calls.push(mm.id); throw err(429, 'rate limit'); }));
+  assert.ok(calls.length <= 7, calls.join(','));   // los 5 de la primera ronda y, como mucho, los que queden libres en la segunda
+  assert.ok(calls.length >= 5, calls.join(','));
+});
+
