@@ -184,7 +184,8 @@ test('crear viaje: propone con el trayecto, la hora de Bolivia y las coordenadas
 test('crear viaje: 08:30 de Bolivia es 12:30 UTC; la propuesta lleva ese instante, no la hora local', async () => {
   const db = fakeDb({ predefined_routes: paths(), drivers: drivers(), transport_routes: [] });
   const proposal = parse(await prepareTripProposal(ADMIN, db, { origin: 'Oruro', destination: 'La Paz', date: '2026-11-27', time: '08:30', driver_name: 'juan' }, NOW)).action;
-  const confirmed = await confirmProposal(proposal.id, ADMIN, { create_trip: async (p) => ({ message: 'ok', data: { received: p.route } }) });
+  // el MISMO reloj que al crear la propuesta: si no, vence (10 min) en cuanto la hora real pasa de la fijada y la prueba falla sola
+  const confirmed = await confirmProposal(proposal.id, ADMIN, { create_trip: async (p) => ({ message: 'ok', data: { received: p.route } }) }, NOW);
   assert.equal(confirmed.data.received.departure_time, '2026-11-27T12:30:00.000Z');
   assert.equal(confirmed.data.received.driver_id, 'dr1');
   assert.equal(confirmed.data.received.origin_lat, -17.98);
