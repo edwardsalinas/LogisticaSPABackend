@@ -135,4 +135,7 @@ router.post('/actions/:id/confirm', AiAgentController.handleConfirmAction);
  */
 router.post('/actions/:id/cancel', AiAgentController.handleCancelAction);
 
+/** Devuelve una acción ya hecha (reprogramar un viaje, cambiar un vehículo): una vez, por quien la hizo y dentro de 30 minutos. */
+router.post('/undo/:id', AiAgentController.handleUndoAction);
+
 export default router;

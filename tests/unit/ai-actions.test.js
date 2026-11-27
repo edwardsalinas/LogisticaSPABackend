@@ -308,6 +308,6 @@ test('buildReceipt: sin códigos o con error de lectura devuelve vacío y no rom
 // Regresión: el ejecutor de «asignar» usaba `user` (el actor que queda en el historial) sin recibirlo y fallaba SIEMPRE
 // con «user is not defined». Todo ejecutor recibe (parámetros, usuario).
 test('todos los ejecutores de acciones reciben (parámetros, usuario)', () => {
-  assert.deepEqual(Object.keys(_rawExecutors).sort(), ['assign_driver', 'assign_package', 'cancel_package', 'cancel_trip', 'create_package', 'create_trip', 'create_vehicle', 'deliver_package', 'plan', 'register_tracking_event', 'reschedule_trip', 'update_vehicle']);
+  assert.deepEqual(Object.keys(_rawExecutors).sort(), ['assign_driver', 'assign_package', 'cancel_package', 'cancel_trip', 'create_package', 'create_trip', 'create_vehicle', 'delete_vehicle', 'deliver_package', 'plan', 'register_tracking_event', 'reschedule_trip', 'update_package', 'update_vehicle']);
   for (const [name, fn] of Object.entries(_rawExecutors)) assert.equal(fn.length, 2, `${name} debe declarar (p, user)`);
 });

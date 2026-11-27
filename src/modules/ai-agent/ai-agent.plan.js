@@ -62,7 +62,7 @@ export const preparePlanProposal = async (user, db, { steps } = {}, now = Date.n
     for (const [i, raw] of steps.entries()) {
       const n = i + 1;
       const { action, ...args } = raw ?? {};
-      const spec = PLAN_ACTIONS[action];
+      const spec = Object.hasOwn(PLAN_ACTIONS, String(action)) ? PLAN_ACTIONS[action] : null; // nunca nombres heredados («constructor»)
       if (!spec) return `El paso ${n} («${action}») no se puede incluir en un plan. Lo irreversible (anular, cancelar, entregar, retirar) se pide aparte. Acciones válidas: ${PLAN_ACTION_NAMES.join(', ')}.`;
       const ref = refOf(args);
       if (ref !== null) {
@@ -112,7 +112,8 @@ export const applyPlan = async (p, user, db, executors) => {
   const results = [];
   for (const [i, step] of p.steps.entries()) {
     const n = i + 1;
-    const spec = PLAN_ACTIONS[step.action];
+    const spec = Object.hasOwn(PLAN_ACTIONS, String(step.action)) ? PLAN_ACTIONS[step.action] : null;
+    if (!spec) throw Object.assign(new Error(`El paso ${n} no es una acción válida.`), { status: 409 });
     let failure = null;
     try {
       const out = await spec.prepare(user, db, resolveArgs(step.args, made));
@@ -135,7 +136,8 @@ export const applyPlan = async (p, user, db, executors) => {
       throw err;
     }
   }
-  return { message: `Plan completo (${done.length} pasos). ${done.join(' ')}`, data: { results } };
+  const shown = results.length === 1 ? { reveal: { kind: 'ui_command', page: 'packages', search: results[0].tracking_code } } : {}; // un solo paquete: se deja la tabla filtrada por él
+  return { message: `Plan completo (${done.length} pasos). ${done.join(' ')}`, data: { results }, ...shown };
 };
 
 /** La herramienta del agente: propone el plan (la ejecución ocurre al confirmar). */

@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { createProposal } from './ai-actions.service.js';
 import { proposalResult } from './ai-proposal-result.js';
 import { prepareCancelProposal, prepareDriverProposal, prepareTripProposal } from './ai-agent.fleet-actions.js';
-import { prepareCancelTripProposal, prepareCreateVehicleProposal, prepareRescheduleProposal, prepareUpdateVehicleProposal } from './ai-agent.manage-actions.js';
+import { prepareCancelTripProposal, prepareCreateVehicleProposal, prepareDeleteVehicleProposal, prepareRescheduleProposal, prepareUpdatePackageProposal, prepareUpdateVehicleProposal } from './ai-agent.manage-actions.js';
 import { PACKAGE_STATUS, packageSchema } from '../logistics/logistics.schema.js';
 
 /**
@@ -494,5 +494,28 @@ export const buildActionTools = (user, db) => {
     }
   );
 
-  return [proposeEvent, proposeDeliver, proposeCreate, proposeAssign, proposeCancel, proposeDriver, proposeTrip, proposeReschedule, proposeCancelTrip, proposeCreateVehicle, proposeUpdateVehicle];
+  const proposeDeleteVehicle = tool(
+    async (args) => prepareDeleteVehicleProposal(user, db, args),
+    {
+      name: 'propose_delete_vehicle',
+      description: 'PROPONE borrar un vehículo (solo administradores) y solo si NO lo usa ningún viaje, conductor ni programación; si lo usan, dilo y ofrece retirarlo (propose_update_vehicle con estado retirado). Es irreversible: confirma con el usuario de qué placa habla. Solo propone: el usuario confirma.',
+      schema: z.object({ plate: z.string().describe('Placa del vehículo') }),
+    }
+  );
+  const proposeUpdatePackage = tool(
+    async (args) => prepareUpdatePackageProposal(user, db, args),
+    {
+      name: 'propose_update_package',
+      description: 'PROPONE corregir un paquete que sigue PENDIENTE y sin viaje: nombre o teléfono del destinatario, peso o descripción (no origen ni destino). Solo propone: el usuario confirma, y después se puede deshacer.',
+      schema: z.object({
+        code: z.string().describe('Código de rastreo del paquete (TRK-…)'),
+        recipient_name: z.string().optional().describe('Nuevo nombre del destinatario'),
+        recipient_phone: z.string().optional().describe('Nuevo teléfono del destinatario'),
+        peso: z.number().optional().describe('Nuevo peso en kilos'),
+        description: z.string().optional().describe('Nueva descripción'),
+      }),
+    }
+  );
+
+  return [proposeEvent, proposeDeliver, proposeCreate, proposeAssign, proposeCancel, proposeDriver, proposeTrip, proposeReschedule, proposeCancelTrip, proposeCreateVehicle, proposeUpdateVehicle, proposeDeleteVehicle, proposeUpdatePackage];
 };

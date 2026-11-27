@@ -39,8 +39,8 @@ const GROUPS = {
     re: /\b(muestra\w*|muestrame|llevame|llevarme|ensena\w*|filtra\w*|busca\w*|abre|abrir|ver en|pantalla|tabla|pestana|historico|vamos a|ve a|filtro\w*|quita\w*|limpia\w*|vuelve a|regresa)\b/,
   },
   actions: {
-    tools: ['propose_register_event', 'propose_deliver_package', 'propose_create_package', 'propose_assign_package', 'propose_cancel_package', 'propose_assign_driver', 'propose_reschedule_trip', 'propose_cancel_trip', 'propose_create_vehicle', 'propose_update_vehicle', 'propose_create_trip', 'propose_plan'],
-    re: /\b(registra\w*|crea\w*|nuevo paquete|entrega\w*|entregar|marca\w*|asigna\w*|evento|agrega\w*|anota\w*|confirma\w*|cancela\w*|anula\w*|despacha\w*|cargar|carga|conductor\w*|chofer\w*|programa\w*|cambia\w*|reprogram\w*|retir\w*|baja|elimin\w*|borra\w*|mueve|mover|adelant\w*|atras\w*|posterg\w*|vehiculo\w*|placa\w*|mantenimiento)\b/,
+    tools: ['propose_register_event', 'propose_deliver_package', 'propose_create_package', 'propose_assign_package', 'propose_cancel_package', 'propose_assign_driver', 'propose_reschedule_trip', 'propose_cancel_trip', 'propose_create_vehicle', 'propose_update_vehicle', 'propose_create_trip', 'propose_plan', 'propose_update_package', 'propose_delete_vehicle'],
+    re: /\b(registra\w*|crea\w*|nuevo paquete|entrega\w*|entregar|marca\w*|asigna\w*|evento|agrega\w*|anota\w*|confirma\w*|cancela\w*|anula\w*|despacha\w*|cargar|carga|conductor\w*|chofer\w*|programa\w*|cambia\w*|reprogram\w*|retir\w*|baja|elimin\w*|borra\w*|mueve|mover|adelant\w*|atras\w*|posterg\w*|vehiculo\w*|placa\w*|mantenimiento|corrige\w*|corregir|edita\w*|editar|modifica\w*|destinatari\w*|peso)\b/,
   },
 };
 

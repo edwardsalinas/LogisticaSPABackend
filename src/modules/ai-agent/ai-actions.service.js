@@ -30,6 +30,8 @@ export const ACTION_ROLES = {
   cancel_trip: OPS,
   create_vehicle: ['admin'],
   update_vehicle: ['admin'],
+  delete_vehicle: ['admin'],
+  update_package: OPS,
   plan: OPS,
 };
 
@@ -90,12 +92,50 @@ export const confirmProposal = async (id, user, executors, now = Date.now()) => 
     p.status = 'done';
     clearToolCache(); // los resúmenes en caché ya no reflejan lo que acaba de cambiar
     console.info(`[AI Action] ${p.type} confirmada por ${user.id} (${user.role})`);
-    return { message: result.message, data: result.data ?? null };
+    // si la acción se puede devolver, el servidor guarda cómo estaba y da al navegador solo un identificador
+    const undo = result.undo ? registerUndo(user, result.undo, now) : null;
+    const data = result.data ?? null;
+    const extra = { ...(undo ? { undo } : {}), ...(result.reveal ? { reveal: result.reveal } : {}) };
+    return { message: result.message, data: Object.keys(extra).length ? { ...(data ?? {}), ...extra } : data };
   } catch (error) {
     p.status = 'failed';
     throw error;
   }
 };
+
+// ---- «Deshacer» del servidor: lo que se hizo se puede devolver, una sola vez, por quien lo hizo y por un rato.
+// El navegador NUNCA manda qué deshacer ni con qué datos: solo el identificador que el servidor le dio al confirmar.
+export const UNDO_TTL_MS = 30 * 60 * 1000;
+const undoStore = new Map();
+
+export const registerUndo = (user, { type, label, params }, now = Date.now()) => {
+  for (const [id, u] of undoStore) if (u.expiresAt <= now) undoStore.delete(id);
+  const id = randomUUID();
+  undoStore.set(id, { userId: user.id, type, label, params, used: false, expiresAt: now + UNDO_TTL_MS });
+  return { id, label, expires_at: new Date(now + UNDO_TTL_MS).toISOString() };
+};
+
+/** Devuelve lo que se hizo con la acción `id` (la del registro). `undoExecutors` se inyecta para poder probar sin base de datos. */
+export const runUndo = async (id, user, undoExecutors, now = Date.now()) => {
+  const u = undoStore.get(id);
+  if (!u || u.userId !== user.id) throw httpError(404, 'No hay nada que deshacer (o ya pasó mucho tiempo).');
+  if (u.expiresAt <= now) { undoStore.delete(id); throw httpError(410, 'Ya pasó el tiempo para deshacer esto (30 minutos).'); }
+  if (u.used) throw httpError(409, 'Esto ya se deshizo.');
+  if (!ACTION_ROLES[u.type]?.includes(user.role)) throw httpError(403, 'No tienes permiso para esta acción');
+  u.used = true; // un solo uso, también si la segunda llamada llega mientras corre la primera
+  try {
+    const result = await undoExecutors[u.type](u.params);
+    clearToolCache();
+    console.info(`[AI Action] deshacer ${u.type} por ${user.id} (${user.role})`);
+    return { message: result.message };
+  } catch (error) {
+    u.used = false; // no se pudo: se puede volver a intentar (si el estado cambió, volverá a fallar con su motivo)
+    throw error;
+  }
+};
+
+/** Solo para pruebas. */
+export const _resetUndo = () => undoStore.clear();
 
 export const cancelProposal = (id, user) => {
   const p = own(id, user);

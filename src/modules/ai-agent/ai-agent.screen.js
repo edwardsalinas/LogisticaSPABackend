@@ -30,7 +30,7 @@ export const cleanSearch = (text) =>
 
 /** Pura y probable: devuelve el adjunto o un texto de error para el modelo. */
 export const buildScreenCommand = (user, { page, tab, search, date, from, to, origin, destination, trip_type: tripType } = {}) => {
-  const screen = SCREENS[page];
+  const screen = Object.hasOwn(SCREENS, String(page)) ? SCREENS[page] : null; // nunca nombres heredados («constructor»)
   if (!screen) return `Esa pantalla no existe. Las pantallas son: ${SCREEN_NAMES.join(', ')}.`;
   if (!screen.roles.includes(user?.role)) return `No tienes ${screen.label} disponible con tu rol; no puedo mostrártela.`;
   const cmd = { kind: 'ui_command', page, label: screen.label };

@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import * as AiAgentService from './ai-agent.service.js';
-import { confirmProposal, cancelProposal } from './ai-actions.service.js';
-import { defaultExecutors } from './ai-actions.executors.js';
+import { confirmProposal, cancelProposal, runUndo } from './ai-actions.service.js';
+import { defaultExecutors, undoExecutors } from './ai-actions.executors.js';
 import supabase from '../../shared/config/supabase.js';
 import { resolveConversation, saveTurn, listConversations, getConversation, deleteConversation } from './ai-conversations.service.js';
 import { recordChat, recordLogiEvent, usageReport, LOGI_EVENTS } from './ai-audit.service.js';
@@ -117,6 +117,15 @@ export const handleConfirmAction = async (req, res) => {
     if (!UUID_RE.test(req.params.id)) return res.status(404).json({ success: false, message: 'La acción no existe o ya no está disponible' });
     const result = await confirmProposal(req.params.id, req.user, defaultExecutors);
     return res.status(200).json({ success: true, result });
+  } catch (error) {
+    return actionError(res, error);
+  }
+};
+
+export const handleUndoAction = async (req, res) => {
+  try {
+    if (!UUID_RE.test(req.params.id)) return res.status(404).json({ success: false, message: 'No hay nada que deshacer (o ya pasó mucho tiempo).' });
+    return res.status(200).json({ success: true, result: await runUndo(req.params.id, req.user, undoExecutors) });
   } catch (error) {
     return actionError(res, error);
   }

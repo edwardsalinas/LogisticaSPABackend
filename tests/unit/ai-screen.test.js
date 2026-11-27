@@ -95,3 +95,7 @@ test('quitar un filtro también elige show_on_screen (aunque «borra» sea una p
   const all = ['get_package_tracking', 'list_routes', 'get_fleet_status', 'show_on_screen', 'propose_cancel_package', 'get_operations_summary', 'list_my_packages', 'propose_create_package'];
   assert.ok(selectToolNames(all, 'bórrame el filtro').includes('show_on_screen'));
 });
+
+test('seguridad: nombres heredados («constructor», «__proto__») no son pantallas', () => {
+  for (const page of ['constructor', '__proto__', 'toString', 'hasOwnProperty']) assert.match(buildScreenCommand(admin, { page }), /no existe/, page);
+});

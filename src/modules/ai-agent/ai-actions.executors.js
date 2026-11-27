@@ -4,7 +4,7 @@ import * as LogisticsService from '../logistics/logistics.service.js';
 import { PACKAGE_STATUS } from '../logistics/logistics.schema.js';
 import { checkRouteForPackage } from './ai-agent.actions.js';
 import { applyAssignDriver } from './ai-agent.fleet-actions.js';
-import { applyCancelTrip, applyCreateVehicle, applyRescheduleTrip, applyUpdateVehicle } from './ai-agent.manage-actions.js';
+import { applyCancelTrip, applyCreateVehicle, applyDeleteVehicle, applyRescheduleTrip, applyUpdatePackage, applyUpdateVehicle, undoRescheduleTrip, undoUpdatePackage, undoUpdateVehicle } from './ai-agent.manage-actions.js';
 import { createVehicle } from '../fleet/fleet.service.js';
 import { applyPlan } from './ai-agent.plan.js';
 
@@ -135,6 +135,14 @@ const rawExecutors = {
     return applyUpdateVehicle(supabase, p);
   },
 
+  async delete_vehicle(p, _user) {
+    return applyDeleteVehicle(supabase, p);
+  },
+
+  async update_package(p, _user) {
+    return applyUpdatePackage(supabase, p);
+  },
+
   // varios pasos con una confirmación: cada uno se vuelve a preparar y confirmar con las reglas de siempre
   async plan(p, user) {
     return applyPlan(p, user, supabase, defaultExecutors);
@@ -186,6 +194,13 @@ const withReceipt = (fn) => async (params, user) => {
     console.error('[AI Action] no se pudo armar el recibo:', error.message);
   }
   return result;
+};
+
+/** Cómo se devuelve cada acción que se puede devolver (el servidor guardó cómo estaba). */
+export const undoExecutors = {
+  reschedule_trip: (u) => undoRescheduleTrip(supabase, u),
+  update_vehicle: (u) => undoUpdateVehicle(supabase, u),
+  update_package: (u) => undoUpdatePackage(supabase, u),
 };
 
 /** Solo para pruebas: los ejecutores sin envolver. */
