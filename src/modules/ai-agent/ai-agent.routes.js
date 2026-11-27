@@ -135,7 +135,27 @@ router.post('/actions/:id/confirm', AiAgentController.handleConfirmAction);
  */
 router.post('/actions/:id/cancel', AiAgentController.handleCancelAction);
 
-/** Devuelve una acción ya hecha (reprogramar un viaje, cambiar un vehículo): una vez, por quien la hizo y dentro de 30 minutos. */
+/**
+ * @swagger
+ * /api/ai-agent/undo/{id}:
+ *   post:
+ *     summary: Deshacer una acción del asistente ya confirmada (reprogramar un viaje, cambiar un vehículo, editar un paquete)
+ *     description: El identificador lo entregó el servidor al confirmar la acción (data.undo.id). Se usa una sola vez, solo por quien hizo el cambio y dentro de 30 minutos. No se deshace si otra persona cambió lo mismo después. El cuerpo va vacío, el navegador no manda qué deshacer.
+ *     tags: [AI Agent]
+ *     security:
+ *       - cookieAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Hecho; devuelve un mensaje }
+ *       403: { description: Tu rol no puede hacer esta acción }
+ *       404: { description: No hay nada que deshacer (no existe, no es tuyo o ya pasó mucho tiempo) }
+ *       409: { description: Ya se deshizo, o el estado cambió y ya no se puede devolver }
+ *       410: { description: Pasaron más de 30 minutos }
+ */
 router.post('/undo/:id', AiAgentController.handleUndoAction);
 
 export default router;

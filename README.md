@@ -12,7 +12,7 @@ API REST para la gestión logística de bienes (paquetería/encomiendas) y servi
 
 - Implementar 6 módulos de dominio independientes (IAM, Logistics, Fleet, Tracking, Statistics, AI-Agent) con patrón Controller-Service-Schema.
 - Exponer 30+ endpoints REST documentados con Swagger/OpenAPI.
-- Integrar un Agente ReAct (LangChain.js) con 17 herramientas y control de acceso por rol (13 de consulta de solo lectura y 4 que proponen acciones con confirmación): paquete por código (ubicación aproximada, ETA, conductor y vehículo), búsqueda por nombre, mis paquetes, resumen de la operación, qué atender, agenda del conductor, flota, ruta y listado de rutas. Cada rol recibe solo las herramientas que puede usar, y la respuesta de `POST /api/ai-agent/chat` incluye `attachments` (datos estructurados para dibujar tarjetas en el chat).
+- Integrar un Agente ReAct (LangChain.js) con 29 herramientas y control de acceso por rol (14 de consulta de solo lectura, 14 que proponen acciones con confirmación y 1 que solo mueve la pantalla; por rol: cliente 5, conductor 7, operador 24 y administrador 28): paquete por código (ubicación aproximada, ETA, conductor y vehículo), búsqueda por nombre, mis paquetes, resumen de la operación, qué atender, agenda del conductor, flota, ruta y listado de rutas. Cada rol recibe solo las herramientas que puede usar, y la respuesta de `POST /api/ai-agent/chat` incluye `attachments` (datos estructurados para dibujar tarjetas en el chat).
 - Implementar validación de datos con Zod en todos los endpoints transaccionales.
 - Configurar un scheduler automático que proyecte rutas a 30 días basándose en cronogramas activos.
 - Gestionar 17 migraciones SQL para la evolución controlada del esquema de base de datos.
@@ -231,7 +231,7 @@ En producción con HTTPS: `COOKIE_SECURE=true` y `CORS_ORIGIN` con el dominio re
 
 ## Acciones del asistente (con confirmación)
 
-El asistente puede **proponer** registrar un evento de seguimiento, entregar un paquete o crear un paquete (según el rol), pero **nunca las ejecuta**:
+El asistente puede **proponer** registrar un evento de seguimiento, entregar, crear, editar o anular un paquete, asignar paquetes, asignar un conductor, crear, reprogramar o cancelar un viaje, registrar, cambiar o borrar un vehículo, o encadenar varios pasos en un plan (según el rol), pero **nunca las ejecuta**:
 
 1. Las herramientas `propose_*` validan permisos, estado y datos, y crean una *propuesta* con un resumen redactado por el servidor (no por el modelo).
 2. La interfaz la muestra como una tarjeta con **Confirmar / Cancelar**.
@@ -244,6 +244,21 @@ Garantías: la propuesta es del usuario que la originó (otro recibe 404), de **
 | Registrar evento (en tránsito / en agencia / siniestro) | Admin y operador | No sobre paquetes entregados, devueltos o cancelados; usa la última posición conocida, el origen de la ruta o la ciudad de origen |
 | Entregar paquete (con nota) | Admin, operador y conductor | El conductor solo paquetes de sus rutas; deja constancia en el historial |
 | Crear paquete | Admin y operador | Mismo esquema de validación que la API |
+| Editar un paquete (destinatario, teléfono, peso, descripción) | Admin y operador | Solo pendientes y sin viaje; se puede deshacer |
+| Reprogramar un viaje | Admin y operador | Solo viajes planeados y a una hora futura; la llegada se corre lo mismo; se puede deshacer |
+| Cancelar un viaje | Admin y operador | Solo planeados; sus paquetes vuelven a pendiente; **no** se deshace |
+| Registrar un vehículo | Solo admin | Mismo esquema de validación; placa única |
+| Cambiar estado o capacidad de un vehículo (retirar) | Solo admin | No si va en un viaje en tránsito; se puede deshacer. Los vehículos se «retiran», no se borran |
+| Borrar un vehículo | Solo admin | Solo si ningún viaje, conductor ni programación lo usa (se vuelve a mirar al confirmar); **no** se deshace |
+| Plan de 2 a 4 pasos (`propose_plan`) | Admin y operador | UNA confirmación; cada paso se vuelve a preparar y confirmar en orden con las reglas de siempre; se detiene si uno falla (sin marcha atrás automática). No admite anular, cancelar, entregar ni retirar |
+
+**Deshacer:** reprogramar, cambiar un vehículo y editar un paquete devuelven un identificador de deshacer. `POST /api/ai-agent/undo/:id` lo usa una sola vez, solo quien hizo el cambio, dentro de 30 minutos, y no pisa un cambio hecho por otra persona después. El navegador nunca manda qué deshacer: el servidor guardó cómo estaba.
+
+**Mover la pantalla:** `show_on_screen` abre una pantalla, cambia de pestaña o filtra una tabla (texto, día de Paquetes, rango de Reportes de hasta 92 días, origen, destino y tipo de Viajes). No lee ni cambia datos. El servidor la limita por rol y el navegador la vuelve a validar. Devuelve un adjunto `ui_command`.
+
+**Contexto de pantalla:** además del paquete o viaje abierto y la pestaña, el cliente puede enviar los filtros puestos y cuántas filas se ven; el servidor los limpia contra una lista cerrada y se los da al modelo como pista, nunca como orden.
+
+**Evaluación con el modelo real:** `npm run evaluar:logi` repite 17 pedidos fijos (pantallas, roles, acciones, plan, inyección de instrucciones) contra el backend en marcha. Solo consulta y propone: nunca confirma, así que no cambia datos. El modelo gratuito no es 100 % estable; algunos casos pasan en el segundo intento.
 
 ## Disponibilidad y conversación
 
