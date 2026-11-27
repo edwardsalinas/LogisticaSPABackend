@@ -14,6 +14,7 @@
     "demo:preparar": "node --env-file=.env scripts/seed-demo.mjs --remove && node --env-file=.env scripts/seed-demo.mjs",
     "test:flow": "node --env-file=.env tests/integration/full-flow.test.js",
     "test": "node --test \"tests/unit/*.test.js\"",
+    "evaluar:logi": "node scripts/evaluar-logi.mjs",
     "ai:eval": "node --env-file=.env scripts/ai-eval.mjs",
     "ai:eval:docs": "node --env-file=.env scripts/ai-eval-docs.mjs",
     "prepare": "husky"

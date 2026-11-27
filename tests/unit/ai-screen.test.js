@@ -87,3 +87,11 @@ test('filtros finos: rechaza fechas imposibles, rangos al revés o demasiado lar
 test('filtros finos: el origen se limpia como cualquier texto de filtro', () => {
   assert.equal(buildScreenCommand(op, { page: 'routes', origin: "Oruro'; --%" }).fields.origin, "Oruro' --");
 });
+
+test('quitar un filtro también elige show_on_screen (aunque «borra» sea una palabra de acciones)', () => {
+  for (const frase of ['bórrame el filtro', 'quita el filtro', 'limpia la búsqueda y los filtros', 'vuelve a mostrar todo']) {
+    assert.ok(intentsOf(frase).includes('screen'), frase);
+  }
+  const all = ['get_package_tracking', 'list_routes', 'get_fleet_status', 'show_on_screen', 'propose_cancel_package', 'get_operations_summary', 'list_my_packages', 'propose_create_package'];
+  assert.ok(selectToolNames(all, 'bórrame el filtro').includes('show_on_screen'));
+});

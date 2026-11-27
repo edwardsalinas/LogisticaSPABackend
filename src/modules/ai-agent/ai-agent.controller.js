@@ -44,6 +44,9 @@ export const chatSchema = z.object({
     path: z.string().max(160),
     entity: z.object({ type: z.enum(['package', 'route']), ref: z.string().max(64) }).optional(),
     view: z.object({ tab: z.string().max(20) }).optional(), // pestaña abierta (el servidor solo acepta las de cada pantalla)
+    // filtros puestos y lo que se ve en la tabla: pistas para «bórrame el filtro» o «el primero»; el servidor los limpia
+    filters: z.record(z.string().max(20), z.union([z.string().max(80), z.object({ from: z.string().max(10), to: z.string().max(10) })])).optional(),
+    visible: z.object({ count: z.number().int().min(0).max(100000), codes: z.array(z.string().max(64)).max(8).optional() }).optional(),
   }).optional(),
 });
 

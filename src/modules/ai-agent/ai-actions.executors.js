@@ -6,6 +6,7 @@ import { checkRouteForPackage } from './ai-agent.actions.js';
 import { applyAssignDriver } from './ai-agent.fleet-actions.js';
 import { applyCancelTrip, applyCreateVehicle, applyRescheduleTrip, applyUpdateVehicle } from './ai-agent.manage-actions.js';
 import { createVehicle } from '../fleet/fleet.service.js';
+import { applyPlan } from './ai-agent.plan.js';
 
 /**
  * Qué hace cada acción al confirmarse. Reutiliza los MISMOS servicios que la API REST y la interfaz clásica,
@@ -132,6 +133,11 @@ const rawExecutors = {
 
   async update_vehicle(p, _user) {
     return applyUpdateVehicle(supabase, p);
+  },
+
+  // varios pasos con una confirmación: cada uno se vuelve a preparar y confirmar con las reglas de siempre
+  async plan(p, user) {
+    return applyPlan(p, user, supabase, defaultExecutors);
   },
 };
 

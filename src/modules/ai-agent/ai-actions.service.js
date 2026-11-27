@@ -30,6 +30,7 @@ export const ACTION_ROLES = {
   cancel_trip: OPS,
   create_vehicle: ['admin'],
   update_vehicle: ['admin'],
+  plan: OPS,
 };
 
 const store = new Map();
