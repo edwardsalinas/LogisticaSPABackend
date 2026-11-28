@@ -105,25 +105,66 @@ export const createPackage = async (data, userId, { actor = null } = {}) => {
 /**
  * Lista todos los paquetes (con filtros opcionales)
  */
-export const getPackages = async (filters = {}) => {
-  const { page = 1, limit = 50 } = filters;
+export const PACKAGES_DEFAULT_LIMIT = 50;
+export const PACKAGES_MAX_LIMIT = 500;
+const PACKAGE_COLUMNS = '*, sender:profiles(full_name), transport_routes(departure_time)';
+
+/** Entero dentro de [min, max]; si no es un número válido, `fallback`. Los parámetros llegan como texto de la URL. */
+const boundedInt = (value, fallback, min, max) => {
+  const n = Number.parseInt(value, 10);
+  return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : fallback;
+};
+
+/** Texto de búsqueda seguro para un filtro de PostgREST: solo letras, números, espacio, guion y apóstrofe (sin comas, paréntesis ni comodines). */
+export const cleanPackageSearch = (text) =>
+  String(text ?? '').normalize('NFC').replace(/[^\p{L}\p{N} '-]/gu, ' ').replace(/\s+/g, ' ').trim().slice(0, 60);
+
+/**
+ * Lista de paquetes, del más nuevo al más antiguo. Filtros: status, sender_id, search (código, destinatario, remitente, origen o destino),
+ * page y limit (por defecto 50, máximo 500). Antes la lista se cortaba en 50 sin forma de pedir más ni de buscar: los paquetes más antiguos
+ * no se podían encontrar desde ninguna pantalla. `db` se inyecta para poder probarla sin base de datos.
+ */
+export const getPackages = async (filters = {}, db = supabase) => {
+  const limit = boundedInt(filters.limit, PACKAGES_DEFAULT_LIMIT, 1, PACKAGES_MAX_LIMIT);
+  const page = boundedInt(filters.page, 1, 1, 100000);
   const from = (page - 1) * limit;
   const to = from + limit - 1;
 
-  let query = supabase
+  let query = db
     .from('packages')
-    .select('*, sender:profiles(full_name), transport_routes(departure_time)')
+    .select(PACKAGE_COLUMNS)
     .order('created_at', { ascending: false });
 
   if (filters.status) query = query.eq('status', filters.status);
   if (filters.sender_id) query = query.eq('sender_id', filters.sender_id);
-  
-  // Aplicar paginación del servidor
+  const term = cleanPackageSearch(filters.search);
+  if (term) {
+    const like = `%${term}%`;
+    query = query.or(['tracking_code', 'recipient_name', 'sender_name', 'origen', 'destino'].map((c) => `${c}.ilike.${like}`).join(','));
+  }
+
   query = query.range(from, to);
 
   const { data, error } = await query;
   if (error) throw error;
 
+  return data;
+};
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Un paquete por su id (la ficha). Control de acceso: el cliente solo ve los suyos y el conductor solo los de sus viajes; el personal ve todos.
+ * Devuelve null si no existe O si no tiene permiso (no se revela que existe).
+ */
+export const getPackageForUser = async (id, user, db = supabase) => {
+  if (!UUID_RE.test(String(id ?? ''))) return null;
+  const { data, error } = await db.from('packages').select('*, sender:profiles(full_name), transport_routes(departure_time, driver_id)').eq('id', id).maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+  if (user?.role === 'client' && data.sender_id !== user.id) return null;
+  if (user?.role === 'driver' && data.transport_routes?.driver_id !== user.id) return null;
+  if (data.transport_routes) { const { driver_id, ...route } = data.transport_routes; data.transport_routes = route; } // eslint-disable-line no-unused-vars -- el conductor asignado no se expone aquí
   return data;
 };
 

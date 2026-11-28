@@ -31,6 +31,16 @@ export const handleGetPackages = async (req, res) => {
   }
 };
 
+export const handleGetPackage = async (req, res) => {
+  try {
+    const pkg = await LogisticsService.getPackageForUser(req.params.id, req.user);
+    if (!pkg) return res.status(404).json({ success: false, message: 'Paquete no encontrado' });
+    return res.status(200).json({ success: true, data: pkg });
+  } catch (error) {
+    { const out = publicError(error); return res.status(out.status).json({ success: false, message: out.message }); }
+  }
+};
+
 export const handleGetRoutes = async (req, res) => {
   try {
     const filters = { ...req.query };

@@ -31,6 +31,26 @@ router.use(requireAuth);
  *         description: Paquete creado
  */
 router.get('/packages', LogisticsController.handleGetPackages);
+
+/**
+ * @swagger
+ * /api/logistics/packages/{id}:
+ *   get:
+ *     summary: Un paquete por su identificador (la ficha)
+ *     description: El cliente solo ve sus paquetes y el conductor solo los de sus viajes. Si no existe o no tienes permiso, responde 404 (no se revela que existe).
+ *     tags: [Logistics]
+ *     security:
+ *       - cookieAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: El paquete }
+ *       404: { description: No existe o no tienes permiso }
+ */
+router.get('/packages/:id', LogisticsController.handleGetPackage);
 router.post('/packages', requireRole(['admin', 'logistics_operator']), LogisticsController.handleCreatePackage);
 
 /**
