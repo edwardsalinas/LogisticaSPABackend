@@ -11,7 +11,7 @@ import { z } from 'zod';
 const STAFF = ['admin', 'logistics_operator'];
 export const SCREENS = {
   dashboard: { label: 'el panel principal', roles: STAFF },
-  packages: { label: 'Paquetes', roles: [...STAFF, 'client'], tabs: ['all', 'delivered'], search: true, fields: ['date'] },
+  packages: { label: 'Paquetes', roles: [...STAFF, 'client'], tabs: ['all', 'list', 'delivered'], search: true, fields: ['date'] },
   routes: { label: 'Viajes', roles: STAFF, tabs: ['calendar', 'list'], search: true, fields: ['origin', 'destination', 'type'] },
   tracking: { label: 'Seguimiento', roles: [...STAFF, 'client'], search: true },
   fleet: { label: 'la Flota', roles: ['admin'], tabs: ['vehicles', 'drivers'], search: true },
@@ -79,7 +79,7 @@ export const buildScreenTools = (user) => [
     {
       name: 'show_on_screen',
       description:
-        'Deja a la vista del usuario una pantalla: la abre, cambia de pestaña y/o filtra su tabla. Úsala cuando pida "muéstrame", "llévame", "filtra", "busca en la tabla", y también tras crear o consultar algo para enseñárselo. Solo mueve la pantalla: no cambia datos. Pantallas: dashboard, packages (pestañas all|delivered), routes (calendar|list), tracking, fleet (vehicles|drivers), analytics, driver. `search` es el texto con el que se filtra la tabla (un código TRK-…, una ciudad, un nombre); vacío quita el filtro. Filtros finos: packages `date` (el día del tablero); routes `origin`, `destination` y `trip_type`; analytics `from` y `to` (rango de fechas, máximo 92 días). Usa las fechas exactas del calendario, nunca las calcules.',
+        'Deja a la vista del usuario una pantalla: la abre, cambia de pestaña y/o filtra su tabla. Úsala cuando pida "muéstrame", "llévame", "filtra", "busca en la tabla", y también tras crear o consultar algo para enseñárselo. Solo mueve la pantalla: no cambia datos. Pantallas: dashboard, packages (pestañas all=operativos, list=todos los paquetes, delivered=histórico), routes (calendar|list), tracking, fleet (vehicles|drivers), analytics, driver. `search` es el texto con el que se filtra la tabla (un código TRK-…, una ciudad, un nombre); vacío quita el filtro. Filtros finos: packages `date` (el día del tablero); routes `origin`, `destination` y `trip_type`; analytics `from` y `to` (rango de fechas, máximo 92 días). Usa las fechas exactas del calendario, nunca las calcules.',
       schema: z.object({
         page: z.string().describe('Pantalla: dashboard, packages, routes, tracking, fleet, analytics o driver'),
         tab: z.string().optional().describe('Pestaña de esa pantalla, si la tiene'),

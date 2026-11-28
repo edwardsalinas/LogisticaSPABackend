@@ -10,7 +10,7 @@
 const PAGES = [
   { re: /^\/logistics\/packages\/[^/]+\/?$/, label: 'el detalle de un paquete', entity: 'package' },
   // la lista admite un paquete abierto (su ficha) y dos pestañas: despachos en operación o histórico de entregados
-  { re: /^\/logistics\/packages\/?$/, label: 'la lista de paquetes', entity: 'package', tabs: { all: 'la pestaña de despachos en operación', delivered: 'el histórico de paquetes entregados' } },
+  { re: /^\/logistics\/packages\/?$/, label: 'la lista de paquetes', entity: 'package', tabs: { all: 'la pestaña de despachos en operación', list: 'la vista de todos los paquetes', delivered: 'el histórico de paquetes entregados' } },
   { re: /^\/logistics\/routes\/[^/]+\/map\/?$/, label: 'el mapa de un viaje', entity: 'route' },
   { re: /^\/logistics\/routes\/?$/, label: 'la lista de viajes' },
   { re: /^\/tracking\/[^/]+\/map\/?$/, label: 'el mapa de seguimiento de un paquete', entity: 'package' },

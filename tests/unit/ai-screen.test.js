@@ -99,3 +99,8 @@ test('quitar un filtro también elige show_on_screen (aunque «borra» sea una p
 test('seguridad: nombres heredados («constructor», «__proto__») no son pantallas', () => {
   for (const page of ['constructor', '__proto__', 'toString', 'hasOwnProperty']) assert.match(buildScreenCommand(admin, { page }), /no existe/, page);
 });
+
+test('Paquetes tiene la vista «Todos» (list): ahí se encuentra cualquier paquete, sea cual sea su fecha o su viaje', () => {
+  assert.equal(buildScreenCommand(op, { page: 'packages', tab: 'list', search: 'TRK-123' }).tab, 'list');
+  assert.match(buildScreenCommand(op, { page: 'packages', tab: 'borrados' }), /no tiene la pestaña/);
+});

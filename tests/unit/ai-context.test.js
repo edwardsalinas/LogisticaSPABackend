@@ -118,3 +118,8 @@ test('contexto: el prompt explica cómo quitar un filtro y cuántas filas se ven
   assert.match(text, /se ven 1 elemento; algunos de ellos: TRK-1/);
   assert.equal(pageContextPrompt({ path: '/logistics/packages' }).includes('Filtros puestos'), false);
 });
+
+test('contexto: la vista «Todos» de Paquetes se reconoce y se le explica al modelo', () => {
+  const text = pageContextPrompt({ path: '/logistics/packages', view: { tab: 'list' } });
+  assert.match(text, /la vista de todos los paquetes/);
+});
