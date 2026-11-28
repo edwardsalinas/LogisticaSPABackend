@@ -122,3 +122,12 @@ test('la consulta HTTP valida el formato de fecha', () => {
   assert.throws(() => analyticsQuerySchema.parse({ from: '01/03/2026' }));
   assert.throws(() => analyticsQuerySchema.parse({ to: "2026-03-01'; drop table packages;--" }));
 });
+
+test('tiempo medio de entrega: una entrega fechada antes de la creación se ignora (no da minutos negativos)', () => {
+  const packages = [
+    pkg('a', 10, 'entregado', { delivered_at: '2026-03-10T14:00:00Z' }),   // 2 h
+    pkg('b', 10, 'entregado', { delivered_at: '2026-03-10T09:00:00Z' }),   // dato inválido: entregado antes de existir
+  ];
+  assert.equal(buildAnalytics({ packages, range: RANGE }).totals.avgDeliveryHours, 2);
+  assert.equal(buildAnalytics({ packages: [packages[1]], range: RANGE }).totals.avgDeliveryHours, null);
+});

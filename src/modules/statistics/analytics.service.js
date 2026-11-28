@@ -62,7 +62,8 @@ export const buildAnalytics = ({ packages, routes = {}, drivers = {}, range }) =
   const measurable = delivered.filter((p) => estimate(p) !== null);
   const onTimeCount = measurable.filter(onTimeOf).length;
 
-  const withDuration = delivered.filter((p) => p.delivered_at);
+  // Una entrega fechada antes de la creación del paquete es un dato inválido: no entra en el promedio (daba duraciones negativas)
+  const withDuration = delivered.filter((p) => p.delivered_at && new Date(p.delivered_at) >= new Date(p.created_at));
   const avgDeliveryHours = withDuration.length
     ? round1(withDuration.reduce((sum, p) => sum + (new Date(p.delivered_at) - new Date(p.created_at)), 0) / withDuration.length / 3600000)
     : null;
